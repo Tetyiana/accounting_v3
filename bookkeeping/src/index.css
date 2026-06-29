@@ -1,0 +1,1021 @@
+/* ============================================================
+   БУХГАЛТЕРІЯ ФОП — стилі v2
+   Палітра: м'ята + шафран
+   ============================================================ */
+
+:root {
+  --mint-900:  #1A6B50;
+  --mint-700:  #2E8B6A;
+  --mint-500:  #3EB389;
+  --mint-300:  #8DD4BB;
+  --mint-100:  #D4F0E6;
+  --mint-50:   #EEF8F4;
+
+  --saffron-900: #9A5F10;
+  --saffron-700: #C07A20;
+  --saffron-500: #E09030;
+  --saffron-300: #F0BA78;
+  --saffron-100: #FAE5C0;
+  --saffron-50:  #FDF5E8;
+
+  --text:         #2C3E50;
+  --text-muted:   #6B7C85;
+  --text-inverse: #FFFFFF;
+  --border:       #BDD9CC;
+  --border-light: #D8EDE5;
+  --bg:           #F4FAF7;
+  --bg-card:      #FFFFFF;
+  --shadow:       0 2px 8px rgba(46,139,106,.10);
+  --shadow-hover: 0 4px 16px rgba(46,139,106,.18);
+  --shadow-card:  0 1px 4px rgba(0,0,0,.08);
+
+  --error:        #C0392B;
+  --error-light:  #E74C3C;
+  --error-bg:     #FDEDEC;
+  --error-border: #E74C3C;
+  --success:      var(--mint-700);
+  --warning:      var(--saffron-500);
+  --warning-bg:   var(--saffron-50);
+
+  --radius:    6px;
+  --radius-sm: 3px;
+  --radius-lg: 10px;
+
+  --sidebar-w: 210px;
+  --header-h:  52px;
+
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { min-height: 100vh; background: var(--bg); color: var(--text); }
+
+h1 { font-size: 1.5rem;  font-weight: 700; color: var(--mint-900); }
+h2 { font-size: 1.15rem; font-weight: 600; color: var(--text); }
+h3 { font-size: .95rem;  font-weight: 600; color: var(--text); }
+p  { color: var(--text-muted); }
+a  { color: var(--mint-700); text-decoration: none; }
+a:hover { color: var(--mint-900); }
+
+/* ── Inputs ─────────────────────────────────────────────── */
+input, select, textarea {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: .875rem;
+  color: var(--text);
+  background: #fff;
+  transition: border-color .15s;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--mint-500);
+  box-shadow: 0 0 0 3px rgba(62,179,137,.15);
+}
+input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+  accent-color: var(--mint-700);
+}
+input::placeholder { color: var(--text-muted); }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  font-size: .875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, box-shadow .15s;
+  white-space: nowrap;
+}
+.btn--primary {
+  background: var(--mint-700);
+  color: #fff;
+  border-color: var(--mint-700);
+}
+.btn--primary:hover  { background: var(--mint-900); border-color: var(--mint-900); }
+.btn--primary:active { background: var(--mint-900); }
+
+.btn--success { background: #27ae60; color: #fff; border-color: #27ae60; }
+.btn--success:hover { background: #1e8449; border-color: #1e8449; }
+
+.btn--danger { background: var(--error-light); color: #fff; border-color: var(--error-light); }
+.btn--danger:hover { background: var(--error); border-color: var(--error); }
+
+.btn--danger-outline { background: transparent; color: var(--error); border-color: var(--error-light); }
+.btn--danger-outline:hover { background: var(--error-bg); }
+
+.btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.btn--ghost:hover { background: var(--mint-50); color: var(--text); }
+.btn--sm { padding: 5px 12px; font-size: .8rem; }
+.btn--full { width: 100%; justify-content: center; }
+
+/* icon buttons */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px; height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: .75rem;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background .12s, color .12s;
+}
+.btn-icon--del:hover { background: var(--error-bg); color: var(--error); }
+.btn-close {
+  background: none; border: none;
+  font-size: 1rem; cursor: pointer;
+  color: var(--text-muted); line-height: 1;
+  padding: 2px 6px; border-radius: var(--radius-sm);
+}
+.btn-close:hover { background: var(--error-bg); color: var(--error); }
+
+/* ── Fields ─────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { font-size: .8rem; font-weight: 500; color: var(--text-muted); }
+.req { color: var(--error-light); }
+
+.field-row  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.form-row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+.field-checks { display: flex; flex-direction: column; gap: 8px; }
+.check-label  { display: flex; align-items: center; gap: 8px; font-size: .875rem; cursor: pointer; }
+.check-label input { width: auto; }
+
+.form-actions { display: flex; gap: 8px; margin-top: 8px; }
+.form-error   { color: var(--error); font-size: .82rem; padding: 6px 10px; background: var(--error-bg); border-radius: var(--radius-sm); }
+
+/* ── Table inputs ────────────────────────────────────────── */
+.table-input {
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+.table-input:focus { border-color: var(--mint-300); background: #fff; }
+.table-input--right { text-align: right; }
+
+/* ============================================================
+   AUTH PAGE
+   ============================================================ */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--mint-50) 0%, var(--saffron-50) 100%);
+  padding: 24px 16px;
+}
+
+.auth-card {
+  background: #fff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(46,139,106,.14);
+  padding: 36px 32px;
+  width: 100%;
+  max-width: 440px;
+}
+
+.auth-logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.auth-logo-icon {
+  width: 46px; height: 46px;
+  background: var(--mint-700);
+  color: #fff;
+  border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.4rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.auth-logo-title { font-size: 1.15rem; font-weight: 700; color: var(--mint-900); }
+.auth-logo-sub   { font-size: .8rem; color: var(--text-muted); }
+
+.auth-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border-light);
+  margin-bottom: 20px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  background: none;
+  font-size: .9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.auth-tab--active { color: var(--mint-700); border-bottom-color: var(--mint-700); }
+.auth-tab:hover:not(.auth-tab--active) { color: var(--text); }
+
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-error {
+  padding: 8px 12px;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-sm);
+  color: var(--error);
+  font-size: .85rem;
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   MAIN LAYOUT (1С-стиль)
+   ============================================================ */
+.main-layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--header-h) 1fr;
+  grid-template-areas:
+    "header header"
+    "sidebar content";
+  min-height: 100vh;
+}
+.main-layout.sidebar-collapsed {
+  --sidebar-w: 0px;
+  grid-template-columns: 0 1fr;
+}
+
+/* ── App Header ──────────────────────────────────────────── */
+.app-header {
+  grid-area: header;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 0 12px;
+  background: #fff;
+  border-bottom: 1.5px solid var(--border-light);
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  position: sticky; top: 0; z-index: 100;
+}
+.header-left { display: flex; align-items: center; gap: 10px; }
+.header-right { display: flex; align-items: center; gap: 10px; }
+
+.sidebar-toggle {
+  background: none; border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: .85rem;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: background .12s;
+}
+.sidebar-toggle:hover { background: var(--mint-50); color: var(--mint-700); }
+
+.header-logo {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--mint-900);
+  letter-spacing: .3px;
+}
+
+.user-badge { display: flex; align-items: center; gap: 8px; }
+.user-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--mint-700);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; font-weight: 600;
+  flex-shrink: 0;
+}
+.user-name { font-size: .85rem; color: var(--text-muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.sidebar {
+  grid-area: sidebar;
+  background: var(--mint-900);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: sticky;
+  top: var(--header-h);
+  height: calc(100vh - var(--header-h));
+}
+
+.sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+.sidebar-group { display: flex; flex-direction: column; }
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 16px;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  color: rgba(255,255,255,.78);
+  font-size: .88rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar-item:hover:not(.sidebar-item--todo) {
+  background: rgba(255,255,255,.08);
+  color: #fff;
+}
+.sidebar-item--active {
+  background: rgba(255,255,255,.12);
+  color: #fff;
+  border-left-color: var(--saffron-300);
+  font-weight: 600;
+}
+.sidebar-item--todo {
+  color: rgba(255,255,255,.4);
+  cursor: default;
+}
+.sidebar-item-label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.sidebar-badge {
+  font-size: .68rem;
+  background: rgba(255,255,255,.15);
+  color: rgba(255,255,255,.6);
+  padding: 1px 5px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-bottom {
+  border-top: 1px solid rgba(255,255,255,.12);
+  padding: 6px 0;
+}
+
+.sidebar-collapsed .sidebar { display: none; }
+
+/* ── Content Area ────────────────────────────────────────── */
+.content-area {
+  grid-area: content;
+  padding: 24px 28px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ── View shared ─────────────────────────────────────────── */
+.view-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.view-title { font-size: 1.15rem; font-weight: 600; color: var(--mint-900); }
+.toolbar-actions { display: flex; gap: 8px; }
+
+/* ── Filters bar ─────────────────────────────────────────── */
+.filters-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.filters-bar input { max-width: 200px; }
+
+/* ── Inline form ─────────────────────────────────────────── */
+.inline-form {
+  background: var(--mint-50);
+  border: 1.5px solid var(--mint-100);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.inline-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  font-size: .9rem;
+  margin-bottom: 14px;
+  color: var(--mint-900);
+}
+
+/* ── Tables ─────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border-light);
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .855rem;
+}
+.data-table th {
+  background: var(--mint-50);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  padding: 9px 12px;
+  text-align: left;
+  border-bottom: 1.5px solid var(--border);
+  white-space: nowrap;
+}
+.data-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: var(--mint-50); }
+.data-table tfoot td {
+  padding: 9px 12px;
+  border-top: 1.5px solid var(--border);
+  background: var(--mint-50);
+}
+
+.table-empty { text-align: center; color: var(--text-muted); padding: 32px !important; }
+.cell-muted  { color: var(--text-muted); }
+
+.row-income { }
+.row-expense { }
+
+/* ── Badges ─────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: .75rem;
+  font-weight: 600;
+}
+.badge--success { background: var(--mint-100); color: var(--mint-900); }
+.badge--danger  { background: var(--error-bg); color: var(--error); }
+
+/* ── Stats cards ─────────────────────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.stat-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-card);
+}
+.stat-card--accent {
+  background: var(--mint-50);
+  border-color: var(--mint-300);
+}
+.stat-label { font-size: .78rem; color: var(--text-muted); margin-bottom: 6px; }
+.stat-value { font-size: 1.25rem; font-weight: 700; color: var(--text); }
+
+/* ── Home view ───────────────────────────────────────────── */
+.view-home { }
+.home-greeting { margin-bottom: 24px; }
+.home-greeting h2 { font-size: 1.3rem; margin-bottom: 4px; }
+.home-greeting p  { font-size: .85rem; color: var(--text-muted); }
+
+.home-shortcuts h3  { margin-bottom: 12px; }
+.shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.shortcut-card {
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+  box-shadow: var(--shadow-card);
+}
+.shortcut-card:hover {
+  border-color: var(--mint-300);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.shortcut-title { font-weight: 600; color: var(--mint-900); margin-bottom: 4px; }
+.shortcut-desc  { font-size: .8rem; color: var(--text-muted); }
+
+/* ── Settings view ───────────────────────────────────────── */
+.view-settings { max-width: 580px; }
+.settings-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section h3 { font-size: .9rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; padding-bottom: 8px; border-bottom: 1px solid var(--border-light); }
+.settings-row { display: flex; justify-content: space-between; align-items: center; font-size: .88rem; }
+.settings-label { color: var(--text-muted); }
+.settings-value { font-weight: 500; }
+
+/* ── Reports view ────────────────────────────────────────── */
+.view-reports { }
+.report-filters { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; }
+.report-filters .field { min-width: 150px; }
+.report-meta { font-size: .82rem; color: var(--text-muted); margin-bottom: 14px; }
+.report-hint {
+  margin-top: 18px;
+  padding: 10px 14px;
+  background: var(--saffron-50);
+  border: 1px solid var(--saffron-100);
+  border-radius: var(--radius-sm);
+  font-size: .8rem;
+  color: var(--saffron-900);
+}
+
+/* ── Documents view ──────────────────────────────────────── */
+.view-documents { }
+.invoice-builder {
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ── Placeholder ─────────────────────────────────────────── */
+.view-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: var(--text-muted);
+  text-align: center;
+  gap: 10px;
+}
+.placeholder-icon { font-size: 2.5rem; }
+.view-placeholder h3 { color: var(--text); }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 768px) {
+  :root { --sidebar-w: 0px; }
+  .main-layout {
+    grid-template-columns: 1fr;
+    grid-template-areas: "header" "content";
+  }
+  .sidebar { display: none; }
+  .content-area { padding: 16px 12px; }
+  .form-row-4 { grid-template-columns: 1fr 1fr; }
+  .form-row-3 { grid-template-columns: 1fr 1fr; }
+  .auth-card  { padding: 24px 20px; }
+}
+@media (max-width: 480px) {
+  .form-row-4, .form-row-3, .field-row { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ============================================================
+   ДОДАТКОВІ КОМПОНЕНТИ — кошик, імпорт файлів, дебітори/ПДВ
+   ============================================================ */
+
+/* ── Sidebar icons ───────────────────────────────────────── */
+.sidebar-item-icon {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: .9rem;
+  opacity: .85;
+}
+
+/* ── Row tint: швидке сканування приходу/видатку, як у 1С ─── */
+.row-income td:first-child { border-left: 3px solid var(--mint-300); }
+.row-expense td:first-child { border-left: 3px solid var(--saffron-300); }
+
+/* ── Badge варіанти ──────────────────────────────────────── */
+.badge--warning { background: var(--warning-bg); color: var(--saffron-900); }
+
+/* ── Upload zone (drag & drop) ──────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+  transition: border-color .15s, background .15s;
+}
+.upload-zone:hover,
+.upload-zone--drag {
+  border-color: var(--mint-500);
+  background: var(--mint-50);
+}
+.upload-zone-icon {
+  font-size: 1.8rem;
+  color: var(--mint-700);
+  margin-bottom: 8px;
+}
+.upload-zone p { margin: 2px 0; }
+
+/* ── Review panel (перевірка розпізнаних рядків) ─────────── */
+.review-panel { display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Tabs (Дебітори/Кредитори) ───────────────────────────── */
+.tabs-bar { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab-pill {
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--border);
+  background: #fff;
+  color: var(--text-muted);
+  font-size: .85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .12s;
+}
+.tab-pill:hover { border-color: var(--mint-300); }
+.tab-pill--active {
+  background: var(--mint-700);
+  border-color: var(--mint-700);
+  color: #fff;
+}
+
+/* ── Inline status select у таблиці ──────────────────────── */
+.status-select {
+  padding: 3px 6px;
+  font-size: .8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  width: auto;
+}
+
+/* ── Settings: повідомлення після дії ────────────────────── */
+.settings-msg {
+  font-size: .82rem;
+  color: var(--mint-900);
+  background: var(--mint-50);
+  border: 1px solid var(--mint-100);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+/* ── Trash view ───────────────────────────────────────────── */
+.view-trash .data-table td { vertical-align: middle; }
+
+/* ============================================================
+   ВИБІРНИК ФОП (FopSelectView, FopProfileView, FOP switcher)
+   ============================================================ */
+
+/* ── Сторінка вибору ФОП ──────────────────────────────────── */
+.fop-select-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, var(--mint-50) 0%, var(--saffron-50) 100%);
+  display: flex;
+  flex-direction: column;
+}
+.fop-select-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  background: #fff;
+  border-bottom: 1px solid var(--border-light);
+  box-shadow: var(--shadow-card);
+}
+.fop-select-logo { display: flex; align-items: center; gap: 14px; }
+.fop-select-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px 32px;
+}
+.fop-select-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--mint-900);
+  margin-bottom: 28px;
+}
+.fop-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  width: 100%;
+  max-width: 900px;
+}
+
+/* ── Картка ФОП у вибірнику ───────────────────────────────── */
+.fop-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #fff;
+  border: 1.5px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+  box-shadow: var(--shadow-card);
+}
+.fop-card:hover {
+  border-color: var(--mint-300);
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-1px);
+}
+.fop-card-avatar {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  background: var(--mint-700);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.fop-card-info { flex: 1; min-width: 0; }
+.fop-card-name { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.fop-card-meta {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  font-size: .78rem; color: var(--text-muted);
+}
+.fop-card-arrow { font-size: 1.4rem; color: var(--mint-300); flex-shrink: 0; }
+
+.fop-card--add {
+  border-style: dashed;
+  color: var(--mint-700);
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 80px;
+}
+.fop-card-add-icon { font-size: 1.8rem; color: var(--mint-300); }
+.fop-card-add-label { font-size: .9rem; font-weight: 500; }
+
+/* ── Форма профілю ФОП ────────────────────────────────────── */
+.fop-profile-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+.fop-profile-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 32px;
+  background: #fff;
+  border-bottom: 1px solid var(--border-light);
+}
+.fop-profile-wrap {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+.fop-profile-header { margin-bottom: 20px; }
+.fop-profile-header h2 { margin-bottom: 4px; }
+.fop-profile-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.fop-profile-body { }
+.tab-pill--disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* Рядок банківського рахунку */
+.bank-account-row {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--bg);
+}
+.bank-account-fields { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.bank-account-actions { display: flex; gap: 6px; align-items: center; }
+
+/* ── Перемикач ФОП у хедері ───────────────────────────────── */
+.fop-switcher { position: relative; }
+.fop-switcher-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--mint-50);
+  border: 1.5px solid var(--mint-100);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .88rem;
+  color: var(--mint-900);
+  font-weight: 500;
+  max-width: 260px;
+  transition: background .12s, border-color .12s;
+}
+.fop-switcher-btn:hover { background: var(--mint-100); border-color: var(--mint-300); }
+.fop-switcher-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.fop-switcher-chevron { font-size: .7rem; flex-shrink: 0; }
+
+/* Дропдаун вибору ФОП */
+.fop-dropdown-backdrop {
+  position: fixed; inset: 0; z-index: 198;
+}
+.fop-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 280px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(0,0,0,.12);
+  z-index: 199;
+  overflow: hidden;
+}
+.fop-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: .88rem;
+  color: var(--text);
+  transition: background .12s;
+}
+.fop-dropdown-item:hover { background: var(--mint-50); }
+.fop-dropdown-item--active { background: var(--mint-50); font-weight: 600; }
+.fop-dropdown-item--add { color: var(--mint-700); font-weight: 500; }
+.fop-dropdown-avatar {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--mint-700);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .78rem; font-weight: 600;
+  flex-shrink: 0;
+}
+.fop-dropdown-meta { font-size: .75rem; color: var(--text-muted); }
+.fop-dropdown-divider { height: 1px; background: var(--border-light); margin: 4px 0; }
+
+/* ── Settings: небезпечна зона ───────────────────────────── */
+.settings-section--danger {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+}
+.settings-section--danger h3 { color: var(--error); }
+
+@media (max-width: 768px) {
+  .fop-cards-grid { grid-template-columns: 1fr; }
+  .bank-account-fields { grid-template-columns: 1fr; }
+  .form-row-2 { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   ПРОДАЖІ / ЗАКУПІВЛІ (SalesView)
+   ============================================================ */
+
+/* Рядок рахунку */
+.invoice-row { cursor: pointer; }
+.invoice-row:hover td { background: var(--mint-50); }
+.invoice-row--open td { background: var(--saffron-50); }
+
+/* Деталь рахунку (розгорнутий) */
+.invoice-detail {
+  padding: 12px 16px 16px;
+  background: var(--bg);
+  border-bottom: 1.5px solid var(--border);
+}
+.invoice-detail-section { margin-bottom: 12px; }
+.invoice-detail-title {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+
+/* badge--muted */
+.badge--muted   { background: var(--border-light); color: var(--text-muted); }
+.badge--info    { background: #dbeafe; color: #1e40af; }
+
+/* ============================================================
+   КНИГА ДОХОДІВ (KdvView)
+   ============================================================ */
+
+.view-kdv { }
+.kdv-fop-info {
+  font-size: .82rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.kdv-mismatch-warn {
+  padding: 10px 14px;
+  background: var(--saffron-50);
+  border: 1.5px solid var(--saffron-300);
+  border-radius: var(--radius-sm);
+  color: var(--saffron-900);
+  font-size: .85rem;
+  margin-bottom: 14px;
+}
+.kdv-total-row td {
+  padding: 7px 12px;
+  border-top: 1.5px solid var(--border);
+  font-size: .83rem;
+}
+
+/* ============================================================
+   ЗАРПЛАТА (PayrollView)
+   ============================================================ */
+
+.view-payroll { }
+
+/* Блок розрахунку */
+.payroll-calc {
+  background: var(--mint-50);
+  border: 1.5px solid var(--mint-100);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* Результат розрахунку */
+.payroll-result {
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-top: 10px;
+}
+.payroll-result-title {
+  font-size: .78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.payroll-result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+.payroll-result-section { }
+.payroll-result-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 4px;
+}
+.payroll-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: .85rem;
+  gap: 8px;
+}
+.payroll-result-row span { color: var(--text-muted); }
+.payroll-result-row b { white-space: nowrap; }
+.payroll-result-row--total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1.5px solid var(--border);
+  font-size: .9rem;
+}
+
+@media (max-width: 900px) {
+  .payroll-result-grid { grid-template-columns: 1fr; }
+}
