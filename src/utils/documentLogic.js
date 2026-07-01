@@ -177,6 +177,31 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
         });
       });
 
+    // Прямі доходи з журналу — операції, не пов'язані з оплатою виставлених рахунків
+    // (якщо дохід заноситься напряму з банку, без формального рахунку/акту)
+    transactions
+      .filter(t => t.type === 'income')
+      .filter(t => !t.invoicePaymentId)
+      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
+      .forEach(t => {
+        const amt = +t.amount || 0;
+        if (amt <= 0) return;
+        entries.push({
+          id:     `tx_${t.id}`,
+          num:    num++,
+          date:   t.date,
+          docRef: t.counterparty || 'Надходження',
+          sourceId: t.id,
+          sourceType: 'transaction',
+          cash: 0, bank: amt, acquiring: 0, other: 0,
+          income: amt,
+          expense: 0, vatOblig: 0,
+          expenseDoc: 0, expenseNoDoc: 0, totalExpense: 0, netIncome: amt,
+          note: t.description || '',
+          isReturn: false,
+        });
+      });
+
     // Прямі витрати з журналу
     transactions
       .filter(t => t.type === 'expense')

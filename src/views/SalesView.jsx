@@ -138,16 +138,9 @@ const buildActHtml = (act, activeFop, settings) => {
 ${docHeaderHtml(activeFop, mainIban)}
 <h2>${docLabel.toUpperCase()} № ${act.number||'—'}</h2>
 <p class="center">від ${act.date||''}</p>
-<table style="border:none;border-top:2px solid #333;border-bottom:2px solid #333;padding:8px 0">
-  <tr>
-    <td style="border:none">Виконавець: <b>ФОП ${activeFop?.fullName||''}</b>${activeFop?.rnokpp?` | РНОКПП: ${activeFop.rnokpp}`:''}</td>
-  </tr>
-  <tr>
-    <td style="border:none">Замовник: <b>${act.clientName||'—'}</b>
-    ${act.clientIpn ? ` | ЄДРПОУ/ІПН: ${act.clientIpn}` : ''}
-    ${act.clientAddress ? `<br>${act.clientAddress}` : ''}</td>
-  </tr>
-</table>
+<p>Виконавець: <b>ФОП ${activeFop?.fullName||''}</b>${activeFop?.rnokpp?` (РНОКПП ${activeFop.rnokpp})`:''}, з однієї сторони, та
+Замовник: <b>${act.clientName||'—'}</b>${act.clientIpn?` (ЄДРПОУ/ІПН ${act.clientIpn})`:''}${act.clientAddress?`, ${act.clientAddress}`:''}, з іншої сторони,
+склали цей акт про те, що Виконавцем надано, а Замовником прийнято наступні роботи (послуги):</p>
 <table>
   <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
   <tbody>${itemRows}</tbody>
@@ -161,10 +154,17 @@ ${docHeaderHtml(activeFop, mainIban)}
     `}
   </tfoot>
 </table>
-<p>Роботи/послуги виконано в повному обсязі, у визначений термін, претензій щодо якості, обсягу і термінів сторони не мають.</p>
+<p>Роботи (послуги) виконано в повному обсязі, у визначений термін. Замовник претензій щодо обсягу, якості та строків виконання робіт (надання послуг) не має.</p>
 <div class="sig">
-  <div>Виконавець:<br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>___________________________<br><small>(підпис)</small></div>
-  <div>Замовник:<br>${act.clientName||''}<br><br>___________________________<br><small>(підпис)</small></div>
+  <div>
+    <b>Виконавець:</b><br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>
+    ___________________________<br><small>(підпис)</small>
+  </div>
+  <div>
+    <b>Замовник:</b><br>${act.clientName||''}<br><br>
+    Посада: ___________________ ПІБ: ___________________<br>
+    ___________________________<br><small>(підпис)</small>
+  </div>
 </div>
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
