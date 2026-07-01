@@ -140,7 +140,12 @@ ${docHeaderHtml(activeFop, mainIban)}
 <p class="center">від ${act.date||''}</p>
 <table style="border:none;border-top:2px solid #333;border-bottom:2px solid #333;padding:8px 0">
   <tr>
-    <td style="border:none">Контрагент: <b>${act.clientName||'—'}</b></td>
+    <td style="border:none">Виконавець: <b>ФОП ${activeFop?.fullName||''}</b>${activeFop?.rnokpp?` | РНОКПП: ${activeFop.rnokpp}`:''}</td>
+  </tr>
+  <tr>
+    <td style="border:none">Замовник: <b>${act.clientName||'—'}</b>
+    ${act.clientIpn ? ` | ЄДРПОУ/ІПН: ${act.clientIpn}` : ''}
+    ${act.clientAddress ? `<br>${act.clientAddress}` : ''}</td>
   </tr>
 </table>
 <table>
@@ -156,7 +161,11 @@ ${docHeaderHtml(activeFop, mainIban)}
     `}
   </tfoot>
 </table>
-${docSignatureHtml(activeFop, facsimileHtml)}
+<p>Роботи/послуги виконано в повному обсязі, у визначений термін, претензій щодо якості, обсягу і термінів сторони не мають.</p>
+<div class="sig">
+  <div>Виконавець:<br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>___________________________<br><small>(підпис)</small></div>
+  <div>Замовник:<br>${act.clientName||''}<br><br>___________________________<br><small>(підпис)</small></div>
+</div>
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
 };
@@ -396,7 +405,9 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
     ...EMPTY_ACT,
     invoiceId:  invoice.id,
     direction:  invoice.direction,
-    clientName: invoice.clientName,
+    clientName:    invoice.clientName,
+    clientIpn:     invoice.clientIpn || '',
+    clientAddress: invoice.clientAddress || '',
     items:      invoice.items?.map(it => ({ ...it })) || [],
     number:     mkNum(actList, invoice.direction === 'outgoing' ? 'АКТ' : 'НАК'),
   });
@@ -447,6 +458,20 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
             <option value="draft">Чернетка</option>
             <option value="signed">Підписано</option>
           </select>
+        </div>
+      </div>
+      <div className="form-row-3" style={{ marginBottom: 12 }}>
+        <div className="field">
+          <label>Контрагент (покупець/замовник)</label>
+          <input name="clientName" value={form.clientName} onChange={set} placeholder="Назва або ПІБ" />
+        </div>
+        <div className="field">
+          <label>ІПН/ЄДРПОУ контрагента</label>
+          <input name="clientIpn" value={form.clientIpn} onChange={set} placeholder="1234567890" />
+        </div>
+        <div className="field">
+          <label>Адреса контрагента</label>
+          <input name="clientAddress" value={form.clientAddress} onChange={set} />
         </div>
       </div>
       <ItemsTable items={form.items} onChange={items => setForm(p => ({ ...p, items }))} vatEnabled={settings.isVatPayer} />
@@ -518,7 +543,7 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelete, onEdit, onUpdateStatus, productOptions }) => {
+const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
@@ -606,9 +631,11 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
                           <td>№{act.number}</td>
                           <td>{act.date}</td>
                           <td>
-                            <span className={`badge ${act.status==='signed'?'badge--success':'badge--muted'}`}>
-                              {act.status === 'signed' ? 'Підписано' : 'Чернетка'}
-                            </span>
+                            <select className="table-input" style={{minWidth:120}} value={act.status || 'draft'}
+                              onChange={e => onUpdateActStatus(act.id, e.target.value)}>
+                              <option value="draft">Чернетка</option>
+                              <option value="signed">Підписано</option>
+                            </select>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(act.total)}</td>
                           <td><button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>⇩ PDF</button></td>
@@ -675,7 +702,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
 
 // ─── Головний компонент ─────────────────────────────────────────────
 const SalesView = () => {
-  const { invoices, acts, payments, addInvoice, updateInvoice, addAct, addPayment, deleteInvoice,
+  const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, addPayment, deleteInvoice,
           clients, products } = useData();
   const [direction, setDirection]   = useState('outgoing');
   const [addInv, setAddInv]         = useState(false);
@@ -786,6 +813,7 @@ const SalesView = () => {
                 invActs={acts.filter(a => a.invoiceId === inv.id)}
                 invPayments={payments.filter(p => p.invoiceId === inv.id)}
                 onAddAct={(act)     => addAct(act)}
+                onUpdateActStatus={(id, newStatus) => updateAct(id, { status: newStatus })}
                 onAddPayment={(pay, inv) => addPayment(pay, { invoice: inv })}
                 onDelete={deleteInvoice}
                 onEdit={(inv) => { setEditInv(inv); setAddInv(false); }}

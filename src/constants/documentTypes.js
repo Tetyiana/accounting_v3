@@ -60,6 +60,8 @@ export const EMPTY_ACT = {
   number: '',
   date: new Date().toISOString().slice(0, 10),
   clientName: '',
+  clientIpn: '',
+  clientAddress: '',
   items: [],
   notes: '',
   status: 'draft', // draft | signed
