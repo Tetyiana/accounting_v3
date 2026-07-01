@@ -180,10 +180,24 @@ const STATUS_BADGE = {
   advance:   'badge--info',
 };
 
-const mkNum = (list, prefix) => {
-  const last = list.filter(i => (i.number||'').startsWith(prefix)).length;
-  return `${prefix}-${String(last + 1).padStart(3, '0')}`;
+const mkNum = (list, prefix, dateStr) => {
+  const year = (dateStr || new Date().toISOString()).slice(0, 4);
+  const count = list.filter(i => (i.number||'').startsWith(prefix) && (i.date||'').slice(0,4) === year).length;
+  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
 };
+
+// Податкові накладні — наскрізна нумерація в межах календарного місяця
+const mkVatNum = (vatInvoices, dateStr) => {
+  const monthKey = (dateStr || new Date().toISOString()).slice(0, 7);
+  const count = vatInvoices.filter(v => (v.date||'').slice(0,7) === monthKey).length;
+  return String(count + 1).padStart(4, '0');
+};
+
+// Автовизначення типу документа за одиницями вимірювання позицій рахунку:
+// послуга/год → акт, будь-яка товарна одиниця → накладна
+const SERVICE_UNITS = ['год', 'послуга'];
+const inferDocType = (items = []) =>
+  items.length > 0 && items.every(it => SERVICE_UNITS.includes(it.unit)) ? 'act' : 'delivery_note';
 
 // ─── Компоненти форм ────────────────────────────────────────────────
 
@@ -297,7 +311,7 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
     ...EMPTY_INVOICE,
     ...initial,
     direction,
-    number: initial?.number || mkNum(invoiceList, direction === 'outgoing' ? 'РАХ' : 'ВХ'),
+    number: initial?.number || mkNum(invoiceList, direction === 'outgoing' ? 'РАХ' : 'ВХ', initial?.date || EMPTY_INVOICE.date),
   }));
 
   const set = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
@@ -401,15 +415,17 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
 const ActForm = ({ invoice, onSave, onCancel, actList }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
+  const inferredType = inferDocType(invoice.items);
   const [form, setForm] = useState({
     ...EMPTY_ACT,
     invoiceId:  invoice.id,
     direction:  invoice.direction,
+    type:       inferredType,
     clientName:    invoice.clientName,
     clientIpn:     invoice.clientIpn || '',
     clientAddress: invoice.clientAddress || '',
     items:      invoice.items?.map(it => ({ ...it })) || [],
-    number:     mkNum(actList, invoice.direction === 'outgoing' ? 'АКТ' : 'НАК'),
+    number:     mkNum(actList, inferredType === 'act' ? 'АКТ' : 'НАК', invoice.date),
   });
   const set = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
   const totals = calcDocTotals(form.items);
@@ -543,7 +559,7 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, productOptions }) => {
+const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, isVatPayer, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
@@ -597,7 +613,9 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, on
           <div style={{ display: 'flex', gap: 4 }}>
             <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>⇩ PDF</button>
             <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>✎</button>
-            <button className="btn btn--ghost btn--sm" title="Акт/Накладна" onClick={() => { setOpen(true); setAddAct(p=>!p); setAddPay(false); }}>+ Акт</button>
+            <button className="btn btn--ghost btn--sm" title="Акт/Накладна" onClick={() => { setOpen(true); setAddAct(p=>!p); setAddPay(false); }}>
+              + {inferDocType(inv.items) === 'act' ? 'Акт' : 'Накладна'}
+            </button>
             <button className="btn btn--ghost btn--sm" title="Оплата" onClick={() => { setOpen(true); setAddPay(p=>!p); setAddAct(false); }}>+ Оплата</button>
             <button className="btn-icon btn-icon--del" title="Видалити" onClick={() => window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id)}>✕</button>
           </div>
@@ -622,6 +640,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, on
                         <th>Статус</th>
                         <th style={{ textAlign: 'right' }}>Сума, грн</th>
                         <th></th>
+                        {isVatPayer && <th>Податкова накладна</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -639,6 +658,15 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, on
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(act.total)}</td>
                           <td><button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>⇩ PDF</button></td>
+                          {isVatPayer && (
+                            <td>
+                              {act.taxInvoiceId ? (
+                                <span className="cell-muted">ПН №{act.taxInvoiceNumber}</span>
+                              ) : (
+                                <button className="btn btn--ghost btn--sm" onClick={() => onGenerateTaxInvoice(act)}>+ ПН</button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -649,7 +677,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, on
               {addAct && (
                 <ActForm
                   invoice={inv}
-                  actList={invActs}
+                  actList={allActs}
                   onSave={(act) => { onAddAct(act); setAddAct(false); }}
                   onCancel={() => setAddAct(false)}
                 />
@@ -703,7 +731,8 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onUpdateActStatus, on
 // ─── Головний компонент ─────────────────────────────────────────────
 const SalesView = () => {
   const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, addPayment, deleteInvoice,
-          clients, products } = useData();
+          clients, products, vatInvoices, addVatInvoice } = useData();
+  const { settings } = useSettings();
   const [direction, setDirection]   = useState('outgoing');
   const [addInv, setAddInv]         = useState(false);
   const [editInv, setEditInv]       = useState(null); // invoice obj for editing
@@ -810,6 +839,7 @@ const SalesView = () => {
               <InvoiceRow
                 key={inv.id}
                 inv={inv}
+                allActs={acts}
                 invActs={acts.filter(a => a.invoiceId === inv.id)}
                 invPayments={payments.filter(p => p.invoiceId === inv.id)}
                 onAddAct={(act)     => addAct(act)}
@@ -818,6 +848,20 @@ const SalesView = () => {
                 onDelete={deleteInvoice}
                 onEdit={(inv) => { setEditInv(inv); setAddInv(false); }}
                 onUpdateStatus={(id, newStatus) => updateInvoice(id, { status: newStatus })}
+                onGenerateTaxInvoice={(act) => {
+                  const num = mkVatNum(vatInvoices, act.date);
+                  const vatInv = addVatInvoice({
+                    date: act.date,
+                    number: num,
+                    direction: inv.direction,
+                    counterparty: act.clientName,
+                    amount: (calcDocTotals(act.items).subtotal || 0),
+                    sourceActId: act.id,
+                    sourceInvoiceNumber: inv.number,
+                  });
+                  updateAct(act.id, { taxInvoiceId: vatInv.id, taxInvoiceNumber: vatInv.number });
+                }}
+                isVatPayer={settings.isVatPayer}
                 productOptions={productOptions}
               />
             ))}

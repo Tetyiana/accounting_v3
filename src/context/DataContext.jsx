@@ -103,7 +103,11 @@ export const DataProvider = ({ fopId, children }) => {
   }, []);
 
   // ─── ПДВ накладні ───────────────────────────────────────────────
-  const addVatInvoice    = useCallback((v) => setVatInvoices(prev => [...prev, { ...v, id: mkId() }]), []);
+  const addVatInvoice    = useCallback((v) => {
+    const item = { ...v, id: mkId() };
+    setVatInvoices(prev => [...prev, item]);
+    return item;
+  }, []);
   const deleteVatInvoice = useCallback((id) => {
     setVatInvoices(prev => {
       const item = prev.find(v => v.id === id);
