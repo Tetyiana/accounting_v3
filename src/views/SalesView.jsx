@@ -13,6 +13,154 @@ import {
 import Autocomplete from '../components/common/Autocomplete';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 
+const openPrintWindow = (html) => {
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if (w) {
+    w.document.write(html);
+    w.document.close();
+  } else {
+    alert('Дозвольте спливаючі вікна для цього сайту, щоб відкрити документ для друку.');
+  }
+};
+
+const DOC_PRINT_STYLE = `
+  body{font-family:Arial,Helvetica,sans-serif;font-size:12px;margin:30px;color:#111}
+  h2{font-size:16px;text-align:center;margin:16px 0 4px}
+  .center{text-align:center} .right{text-align:right}
+  table{width:100%;border-collapse:collapse;margin:12px 0}
+  td,th{border:1px solid #aaa;padding:5px 8px}
+  th{background:#f0f0f0;font-weight:600}
+  .total-row td{font-weight:700;background:#f8f8f8}
+  .sig{margin-top:40px;display:flex;justify-content:space-between}
+  @media print{body{margin:15mm}}
+`;
+
+const docHeaderHtml = (activeFop, mainIban) => `
+<table style="border:none;margin-bottom:0">
+  <tr>
+    <td style="border:none;width:60%">
+      <b>ФОП ${activeFop?.fullName||''}</b><br>
+      РНОКПП: ${activeFop?.rnokpp||''}
+      ${mainIban?.iban ? `<br>IBAN: ${mainIban.iban} (${mainIban.bankName||''})` : ''}
+      ${activeFop?.legalAddress ? `<br>${activeFop.legalAddress}` : ''}
+    </td>
+    <td style="border:none;text-align:right">
+      ${activeFop?.mainKved ? `КВЕД: ${activeFop.mainKved}` : ''}
+    </td>
+  </tr>
+</table>`;
+
+const docSignatureHtml = (activeFop, facsimileHtml) => `
+<div class="sig">
+  <div>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>___________________________<br><small>(підпис)</small></div>
+  <div style="text-align:right">М.П.</div>
+</div>`;
+
+// Друк рахунку (нового або вже збереженого)
+const buildInvoiceHtml = (inv, activeFop, settings) => {
+  const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
+  const facsimileHtml = activeFop?.facsimile
+    ? `<img src="${activeFop.facsimile}" style="max-height:70px; max-width:180px; display:block; margin-top:10px">`
+    : '';
+  const totalsNow = calcDocTotals(inv.items || []);
+
+  const itemRows = (inv.items || []).map((it, i) => {
+    const { subtotal, vatAmount, total } = calcItemAmounts(it);
+    return settings.isVatPayer
+      ? `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
+         <td align="right">${fmtMoney(it.price)}</td><td align="right">${fmtMoney(vatAmount)}</td>
+         <td align="right"><b>${fmtMoney(total)}</b></td></tr>`
+      : `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
+         <td align="right">${fmtMoney(it.price)}</td><td align="right"><b>${fmtMoney(subtotal)}</b></td></tr>`;
+  }).join('');
+
+  const vatHeader = settings.isVatPayer
+    ? '<th>Ціна, грн</th><th>ПДВ, грн</th><th>Сума, грн</th>'
+    : '<th>Ціна, грн</th><th>Сума, грн</th>';
+
+  return `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
+<title>Рахунок №${inv.number}</title>
+<style>${DOC_PRINT_STYLE}</style></head><body>
+${docHeaderHtml(activeFop, mainIban)}
+<h2>РАХУНОК-ФАКТУРА № ${inv.number||'—'}</h2>
+<p class="center">від ${inv.date||''} ${inv.dueDate?`· Термін оплати: ${inv.dueDate}`:''}</p>
+<table style="border:none;border-top:2px solid #333;border-bottom:2px solid #333;padding:8px 0">
+  <tr>
+    <td style="border:none">Платник: <b>${inv.clientName||'—'}</b>
+    ${inv.clientIpn ? ` | ЄДРПОУ/ІПН: ${inv.clientIpn}` : ''}
+    ${inv.clientAddress ? `<br>${inv.clientAddress}` : ''}</td>
+  </tr>
+</table>
+<table>
+  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
+  <tbody>${itemRows}</tbody>
+  <tfoot>
+    ${settings.isVatPayer ? `
+    <tr class="total-row"><td colspan="6" align="right">Без ПДВ:</td><td align="right">${fmtMoney(totalsNow.subtotal)} грн</td></tr>
+    <tr class="total-row"><td colspan="6" align="right">ПДВ 20%:</td><td align="right">${fmtMoney(totalsNow.vatAmount)} грн</td></tr>
+    <tr class="total-row"><td colspan="6" align="right"><b>Разом до сплати:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
+    ` : `
+    <tr class="total-row"><td colspan="5" align="right"><b>Разом до сплати:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
+    `}
+  </tfoot>
+</table>
+${docSignatureHtml(activeFop, facsimileHtml)}
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
+};
+
+// Друк акту / накладної
+const buildActHtml = (act, activeFop, settings) => {
+  const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
+  const facsimileHtml = activeFop?.facsimile
+    ? `<img src="${activeFop.facsimile}" style="max-height:70px; max-width:180px; display:block; margin-top:10px">`
+    : '';
+  const totalsNow = calcDocTotals(act.items || []);
+  const docLabel = ACT_TYPES.find(t => t.id === act.type)?.label || 'Акт';
+
+  const itemRows = (act.items || []).map((it, i) => {
+    const { subtotal, vatAmount, total } = calcItemAmounts(it);
+    return settings.isVatPayer
+      ? `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
+         <td align="right">${fmtMoney(it.price)}</td><td align="right">${fmtMoney(vatAmount)}</td>
+         <td align="right"><b>${fmtMoney(total)}</b></td></tr>`
+      : `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
+         <td align="right">${fmtMoney(it.price)}</td><td align="right"><b>${fmtMoney(subtotal)}</b></td></tr>`;
+  }).join('');
+
+  const vatHeader = settings.isVatPayer
+    ? '<th>Ціна, грн</th><th>ПДВ, грн</th><th>Сума, грн</th>'
+    : '<th>Ціна, грн</th><th>Сума, грн</th>';
+
+  return `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
+<title>${docLabel} №${act.number}</title>
+<style>${DOC_PRINT_STYLE}</style></head><body>
+${docHeaderHtml(activeFop, mainIban)}
+<h2>${docLabel.toUpperCase()} № ${act.number||'—'}</h2>
+<p class="center">від ${act.date||''}</p>
+<table style="border:none;border-top:2px solid #333;border-bottom:2px solid #333;padding:8px 0">
+  <tr>
+    <td style="border:none">Контрагент: <b>${act.clientName||'—'}</b></td>
+  </tr>
+</table>
+<table>
+  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
+  <tbody>${itemRows}</tbody>
+  <tfoot>
+    ${settings.isVatPayer ? `
+    <tr class="total-row"><td colspan="6" align="right">Без ПДВ:</td><td align="right">${fmtMoney(totalsNow.subtotal)} грн</td></tr>
+    <tr class="total-row"><td colspan="6" align="right">ПДВ 20%:</td><td align="right">${fmtMoney(totalsNow.vatAmount)} грн</td></tr>
+    <tr class="total-row"><td colspan="6" align="right"><b>Разом:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
+    ` : `
+    <tr class="total-row"><td colspan="5" align="right"><b>Разом:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
+    `}
+  </tfoot>
+</table>
+${docSignatureHtml(activeFop, facsimileHtml)}
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
+};
+
 const STATUS_BADGE = {
   draft:     'badge--muted',
   sent:      'badge--warning',
@@ -162,89 +310,7 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
   // Баг 4: генерація рахунку через HTML+window.print() — підтримує кирилицю без embedded шрифтів
   const handlePdf = () => {
     try {
-      const totalsNow = calcDocTotals(form.items);
-      const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
-
-      const itemRows = (form.items || []).map((it, i) => {
-        const { subtotal, vatAmount, total } = calcItemAmounts(it);
-        return settings.isVatPayer
-          ? `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
-             <td align="right">${fmtMoney(it.price)}</td><td align="right">${fmtMoney(vatAmount)}</td>
-             <td align="right"><b>${fmtMoney(total)}</b></td></tr>`
-          : `<tr><td>${i+1}</td><td>${it.name||''}</td><td>${it.qty}</td><td>${it.unit}</td>
-             <td align="right">${fmtMoney(it.price)}</td><td align="right"><b>${fmtMoney(subtotal)}</b></td></tr>`;
-      }).join('');
-
-      const vatHeader = settings.isVatPayer
-        ? '<th>Ціна, грн</th><th>ПДВ, грн</th><th>Сума, грн</th>'
-        : '<th>Ціна, грн</th><th>Сума, грн</th>';
-
-      const facsimileHtml = activeFop?.facsimile
-        ? `<img src="${activeFop.facsimile}" style="max-height:70px; max-width:180px; display:block; margin-top:10px">`
-        : '';
-
-      const html = `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
-<title>Рахунок №${form.number}</title>
-<style>
-  body{font-family:Arial,Helvetica,sans-serif;font-size:12px;margin:30px;color:#111}
-  h2{font-size:16px;text-align:center;margin:16px 0 4px}
-  .center{text-align:center} .right{text-align:right}
-  table{width:100%;border-collapse:collapse;margin:12px 0}
-  td,th{border:1px solid #aaa;padding:5px 8px}
-  th{background:#f0f0f0;font-weight:600}
-  .total-row td{font-weight:700;background:#f8f8f8}
-  .sig{margin-top:40px;display:flex;justify-content:space-between}
-  @media print{body{margin:15mm}}
-</style></head><body>
-<table style="border:none;margin-bottom:0">
-  <tr>
-    <td style="border:none;width:60%">
-      <b>ФОП ${activeFop?.fullName||''}</b><br>
-      РНОКПП: ${activeFop?.rnokpp||''}
-      ${mainIban?.iban ? `<br>IBAN: ${mainIban.iban} (${mainIban.bankName||''})` : ''}
-      ${activeFop?.legalAddress ? `<br>${activeFop.legalAddress}` : ''}
-    </td>
-    <td style="border:none;text-align:right">
-      ${activeFop?.mainKved ? `КВЕД: ${activeFop.mainKved}` : ''}
-    </td>
-  </tr>
-</table>
-<h2>РАХУНОК-ФАКТУРА № ${form.number||'—'}</h2>
-<p class="center">від ${form.date||''} ${form.dueDate?`· Термін оплати: ${form.dueDate}`:''}</p>
-<table style="border:none;border-top:2px solid #333;border-bottom:2px solid #333;padding:8px 0">
-  <tr>
-    <td style="border:none">Платник: <b>${form.clientName||'—'}</b>
-    ${form.clientIpn ? ` | ЄДРПОУ/ІПН: ${form.clientIpn}` : ''}
-    ${form.clientAddress ? `<br>${form.clientAddress}` : ''}</td>
-  </tr>
-</table>
-<table>
-  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
-  <tbody>${itemRows}</tbody>
-  <tfoot>
-    ${settings.isVatPayer ? `
-    <tr class="total-row"><td colspan="6" align="right">Без ПДВ:</td><td align="right">${fmtMoney(totalsNow.subtotal)} грн</td></tr>
-    <tr class="total-row"><td colspan="6" align="right">ПДВ 20%:</td><td align="right">${fmtMoney(totalsNow.vatAmount)} грн</td></tr>
-    <tr class="total-row"><td colspan="6" align="right"><b>Разом до сплати:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
-    ` : `
-    <tr class="total-row"><td colspan="5" align="right"><b>Разом до сплати:</b></td><td align="right"><b>${fmtMoney(totalsNow.total)} грн</b></td></tr>
-    `}
-  </tfoot>
-</table>
-<div class="sig">
-  <div>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>___________________________<br><small>(підпис)</small></div>
-  <div style="text-align:right">М.П.</div>
-</div>
-<script>window.onload=()=>window.print()</script>
-</body></html>`;
-
-      const w = window.open('', '_blank', 'width=900,height=700');
-      if (w) {
-        w.document.write(html);
-        w.document.close();
-      } else {
-        alert('Дозвольте спливаючі вікна для цього сайту, щоб відкрити рахунок для друку.');
-      }
+      openPrintWindow(buildInvoiceHtml(form, activeFop, settings));
     } catch(e) {
       console.error('Помилка генерації рахунку:', e);
       alert('Помилка: ' + (e.message || String(e)));
@@ -325,6 +391,7 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
 // ─── Форма акту / накладної ─────────────────────────────────────────
 const ActForm = ({ invoice, onSave, onCancel, actList }) => {
   const { settings } = useSettings();
+  const { activeFop } = useFop();
   const [form, setForm] = useState({
     ...EMPTY_ACT,
     invoiceId:  invoice.id,
@@ -341,11 +408,23 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
     onSave({ ...form, ...totals });
   };
 
+  const handlePrint = () => {
+    try {
+      openPrintWindow(buildActHtml(form, activeFop, settings));
+    } catch(e) {
+      console.error('Помилка генерації акту:', e);
+      alert('Помилка: ' + (e.message || String(e)));
+    }
+  };
+
   return (
     <div className="inline-form" style={{ marginLeft: 16, borderLeft: '3px solid var(--mint-300)' }}>
       <div className="inline-form-header">
         <span>Новий акт / накладна до рах. №{invoice.number}</span>
-        <button className="btn-close" onClick={onCancel}>✕</button>
+        <div style={{display:'flex', gap:6}}>
+          <button className="btn btn--ghost btn--sm" onClick={handlePrint} title="Друк">⇩ PDF</button>
+          <button className="btn-close" onClick={onCancel}>✕</button>
+        </div>
       </div>
       <div className="form-row-4" style={{ marginBottom: 12 }}>
         <div className="field">
@@ -373,6 +452,7 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
       <ItemsTable items={form.items} onChange={items => setForm(p => ({ ...p, items }))} vatEnabled={settings.isVatPayer} />
       <div className="form-actions">
         <button className="btn btn--primary" onClick={handleSave}>Зберегти акт</button>
+        <button className="btn btn--ghost" onClick={handlePrint}>⇩ PDF</button>
         <button className="btn btn--ghost" onClick={onCancel}>Скасувати</button>
       </div>
     </div>
@@ -438,7 +518,9 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelete, onEdit, productOptions }) => {
+const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelete, onEdit, onUpdateStatus, productOptions }) => {
+  const { settings } = useSettings();
+  const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
   const [addAct, setAddAct] = useState(false);
   const [addPay, setAddPay] = useState(false);
@@ -448,10 +530,38 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
   const remain = (+inv.total || 0) - paid;
   const statusInfo = INVOICE_STATUSES[status] || INVOICE_STATUSES.draft;
 
+  const handlePrintInvoice = () => {
+    try {
+      openPrintWindow(buildInvoiceHtml(inv, activeFop, settings));
+    } catch(e) {
+      console.error('Помилка генерації рахунку:', e);
+      alert('Помилка: ' + (e.message || String(e)));
+    }
+  };
+
+  const handlePrintAct = (act) => {
+    try {
+      openPrintWindow(buildActHtml(act, activeFop, settings));
+    } catch(e) {
+      console.error('Помилка генерації акту:', e);
+      alert('Помилка: ' + (e.message || String(e)));
+    }
+  };
+
   return (
     <>
       <tr className={`invoice-row${open ? ' invoice-row--open' : ''}`} onClick={() => { setOpen(p=>!p); setAddAct(false); setAddPay(false); }}>
-        <td><span className={`badge ${STATUS_BADGE[status] || ''}`}>{statusInfo.label}</span></td>
+        <td onClick={e => e.stopPropagation()}>
+          <select className="table-input" style={{minWidth:130}} value={inv.status || 'sent'}
+            onChange={e => onUpdateStatus(inv.id, e.target.value)}>
+            {Object.values(INVOICE_STATUSES).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+          {status !== (inv.status || 'sent') && (
+            <div className="cell-muted" style={{fontSize:'.72rem', marginTop:2}}>
+              факт.: {statusInfo.label}
+            </div>
+          )}
+        </td>
         <td>№{inv.number}</td>
         <td>{inv.date}</td>
         <td>{inv.clientName || '—'}</td>
@@ -460,6 +570,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
         <td style={{ textAlign: 'right', color: remain > 0 ? 'var(--error)' : undefined }}>{fmtMoney(remain)}</td>
         <td onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', gap: 4 }}>
+            <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>⇩ PDF</button>
             <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>✎</button>
             <button className="btn btn--ghost btn--sm" title="Акт/Накладна" onClick={() => { setOpen(true); setAddAct(p=>!p); setAddPay(false); }}>+ Акт</button>
             <button className="btn btn--ghost btn--sm" title="Оплата" onClick={() => { setOpen(true); setAddPay(p=>!p); setAddAct(false); }}>+ Оплата</button>
@@ -485,6 +596,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
                         <th>Дата</th>
                         <th>Статус</th>
                         <th style={{ textAlign: 'right' }}>Сума, грн</th>
+                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -499,6 +611,7 @@ const InvoiceRow = ({ inv, invActs, invPayments, onAddAct, onAddPayment, onDelet
                             </span>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(act.total)}</td>
+                          <td><button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>⇩ PDF</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -676,6 +789,7 @@ const SalesView = () => {
                 onAddPayment={(pay, inv) => addPayment(pay, { invoice: inv })}
                 onDelete={deleteInvoice}
                 onEdit={(inv) => { setEditInv(inv); setAddInv(false); }}
+                onUpdateStatus={(id, newStatus) => updateInvoice(id, { status: newStatus })}
                 productOptions={productOptions}
               />
             ))}

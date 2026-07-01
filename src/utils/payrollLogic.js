@@ -134,3 +134,33 @@ export const calcUnpaidLeaveDeduction = ({ monthlySalary, workingDaysInMonth, un
   const deduction = round2(dailyRate * Math.min(ud, wdim)); // не більше місячного окладу
   return { deduction, dailyRate };
 };
+
+// Кількість робочих днів (пн-пт) у місяці за period 'YYYY-MM'
+export const calcWorkingDaysInMonth = (period) => {
+  if (!period) return 21;
+  const [y, m] = period.split('-').map(Number);
+  if (!y || !m) return 21;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dow = new Date(y, m - 1, d).getDay(); // 0=нд, 6=сб
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+};
+
+// Кількість робочих днів (пн-пт) у діапазоні з N календарних днів, починаючи з startDate
+export const calcWorkingDaysInRange = (startDate, calendarDays) => {
+  const cd = +calendarDays || 0;
+  if (!startDate || cd <= 0) return 0;
+  const start = new Date(startDate);
+  if (Number.isNaN(start.getTime())) return 0;
+  let count = 0;
+  for (let i = 0; i < cd; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+};

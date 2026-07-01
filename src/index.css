@@ -151,6 +151,15 @@ input::placeholder { color: var(--text-muted); }
 /* ── Fields ─────────────────────────────────────────────── */
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field label { font-size: .8rem; font-weight: 500; color: var(--text-muted); }
+.password-field { position: relative; display: flex; }
+.password-field input { flex: 1; padding-right: 38px; }
+.password-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border: none; background: transparent;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+}
+.password-toggle:hover { color: var(--text); }
 .req { color: var(--error-light); }
 
 .field-row  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -449,6 +458,7 @@ input::placeholder { color: var(--text-muted); }
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr:hover { background: var(--mint-50); }
+.data-table tbody tr.row-disabled { opacity: .45; }
 .data-table tfoot td {
   padding: 9px 12px;
   border-top: 1.5px solid var(--border);

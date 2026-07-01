@@ -11,7 +11,7 @@ import {
   calcNetFromGross, calcGrossFromNet,
   calcLeaveDaily, calcLeaveAmount,
   calcSickPay, calcTerminationCompensation,
-  calcUnpaidLeaveDeduction,
+  calcUnpaidLeaveDeduction, calcWorkingDaysInMonth, calcWorkingDaysInRange,
   buildPayrollSummary, calcLeaveAccrualForMonth, round2,
 } from '../utils/payrollLogic';
 import { generatePayrollXml, downloadXml } from '../utils/payrollXml';
@@ -113,8 +113,10 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || 100));
   const [leaveDays, setLeaveDays] = useState(String(existingRecord?.leaveDays || 0));
   const [compensationDays, setCompensationDays] = useState(String(existingRecord?.compensationDays || 0));
-  const [unpaidDays, setUnpaidDays] = useState(String(existingRecord?.unpaidDays || 0));
-  const [workingDaysInMonth, setWorkingDaysInMonth] = useState(String(existingRecord?.workingDaysInMonth || 21));
+  const [unpaidCalendarDays, setUnpaidCalendarDays] = useState(String(existingRecord?.unpaidCalendarDays || existingRecord?.unpaidDays || 0));
+  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
+  const workingDaysInMonth = calcWorkingDaysInMonth(period);
+  const unpaidDays = calcWorkingDaysInRange(unpaidStartDate, +unpaidCalendarDays);
   const [otherAccruals, setOtherAccruals] = useState(String(existingRecord?.otherAccruals || 0));
   const [notes, setNotes] = useState(existingRecord?.notes || '');
 
@@ -185,6 +187,8 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         compensationDays:     cd,
         compensationAmount:   comp2,
         unpaidDays:           ud,
+        unpaidCalendarDays:   +unpaidCalendarDays || 0,
+        unpaidStartDate:      unpaidStartDate,
         workingDaysInMonth:   wdim,
         unpaidDeductionAmount:unpaid2.deduction,
         otherAccruals:        other,
@@ -249,13 +253,17 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
           <input type="number" value={compensationDays} onChange={e => setCompensationDays(e.target.value)} min="0" />
         </div>
         <div className="field">
-          <label>Відпустка за вл. рах. (р.д.)</label>
-          <input type="number" value={unpaidDays} onChange={e => setUnpaidDays(e.target.value)} min="0" />
+          <label>Відпустка за вл. рах., дата початку</label>
+          <input type="date" value={unpaidStartDate} onChange={e => setUnpaidStartDate(e.target.value)} />
         </div>
-        {+unpaidDays > 0 && (
+        <div className="field">
+          <label>Відпустка за вл. рах. (к.д.)</label>
+          <input type="number" value={unpaidCalendarDays} onChange={e => setUnpaidCalendarDays(e.target.value)} min="0" />
+        </div>
+        {+unpaidCalendarDays > 0 && (
           <div className="field">
-            <label>Робочих днів у місяці</label>
-            <input type="number" value={workingDaysInMonth} onChange={e => setWorkingDaysInMonth(e.target.value)} min="1" max="31" />
+            <label>Робочих днів (рахує програма)</label>
+            <input type="number" value={unpaidDays} disabled />
           </div>
         )}
         <div className="field">
@@ -306,7 +314,7 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
             <div className="payroll-result-row"><span>Оклад (повний)</span><b>{fmtMoney(grossInput)}</b></div>
             {unpaidInfo.deduction > 0 && (
               <div className="payroll-result-row">
-                <span>ВВР ({+unpaidDays} роб.д. × {fmtMoney(unpaidInfo.dailyRate)} грн)</span>
+                <span>ВВР ({+unpaidCalendarDays} к.д. → {+unpaidDays} роб.д. × {fmtMoney(unpaidInfo.dailyRate)} грн)</span>
                 <b style={{color:'var(--error)'}}>− {fmtMoney(unpaidInfo.deduction)}</b>
               </div>
             )}
@@ -378,7 +386,7 @@ const printPayslip = (record, employee, fop) => {
 <table>
   <tr><th colspan="2">НАРАХУВАННЯ</th></tr>
   <tr><td>Оклад</td><td align="right">${fmtMoney(record.grossSalary)} грн</td></tr>
-  ${record.unpaidDeductionAmount>0?`<tr><td>Відпустка за вл. рах. (${record.unpaidDays} р.д.)</td><td align="right" style="color:#c0392b">− ${fmtMoney(record.unpaidDeductionAmount)} грн</td></tr>`:''}
+  ${record.unpaidDeductionAmount>0?`<tr><td>Відпустка за вл. рах. (${record.unpaidCalendarDays||record.unpaidDays} к.д. / ${record.unpaidDays} р.д.)</td><td align="right" style="color:#c0392b">− ${fmtMoney(record.unpaidDeductionAmount)} грн</td></tr>`:''}
   ${record.sickPayAmount>0?`<tr><td>Лікарняний (${record.sickDays} дн., ${record.sickPayPercent}%)</td><td align="right">${fmtMoney(record.sickPayAmount)} грн</td></tr>`:''}
   ${record.leavePayAmount>0?`<tr><td>Відпускні (${record.leaveDays} к.д.)</td><td align="right">${fmtMoney(record.leavePayAmount)} грн</td></tr>`:''}
   ${record.compensationAmount>0?`<tr><td>Компенсація відпустки (${record.compensationDays} д.)</td><td align="right">${fmtMoney(record.compensationAmount)} грн</td></tr>`:''}

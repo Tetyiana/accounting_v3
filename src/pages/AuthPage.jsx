@@ -4,12 +4,30 @@ import { useAuth } from '../context/AuthContext';
 const INIT_LOGIN = { email: '', password: '' };
 const INIT_REG   = { name: '', email: '', password: '', confirm: '' };
 
+const EyeIcon = ({ open }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {open ? (
+      <>
+        <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" />
+        <circle cx="12" cy="12" r="3" />
+      </>
+    ) : (
+      <>
+        <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 4.22-5.94M9.9 4.24A10.4 10.4 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </>
+    )}
+  </svg>
+);
+
 const AuthPage = () => {
   const { login, register } = useAuth();
   const [mode, setMode]     = useState('login');
   const [form, setForm]     = useState(INIT_LOGIN);
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const switchMode = (m) => { setMode(m); setError(''); setForm(m === 'login' ? INIT_LOGIN : INIT_REG); };
   const set = (e) => setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -61,8 +79,14 @@ const AuthPage = () => {
             </div>
             <div className="field">
               <label>Пароль</label>
-              <input name="password" type="password" value={form.password} onChange={set} placeholder="••••••"
-                onKeyDown={e => e.key==='Enter' && handleLogin()} />
+              <div className="password-field">
+                <input name="password" type={showPass ? 'text' : 'password'} value={form.password} onChange={set} placeholder="••••••"
+                  onKeyDown={e => e.key==='Enter' && handleLogin()} />
+                <button type="button" className="password-toggle" onClick={() => setShowPass(v => !v)} tabIndex={-1}
+                  aria-label={showPass ? 'Сховати пароль' : 'Показати пароль'}>
+                  <EyeIcon open={showPass} />
+                </button>
+              </div>
             </div>
             <button className="btn btn--primary btn--full" onClick={handleLogin} disabled={loading}>
               {loading ? 'Вхід...' : 'Увійти'}
@@ -81,11 +105,23 @@ const AuthPage = () => {
             <div className="field-row">
               <div className="field">
                 <label>Пароль <span className="req">*</span></label>
-                <input name="password" type="password" value={form.password} onChange={set} placeholder="••••••" />
+                <div className="password-field">
+                  <input name="password" type={showPass ? 'text' : 'password'} value={form.password} onChange={set} placeholder="••••••" />
+                  <button type="button" className="password-toggle" onClick={() => setShowPass(v => !v)} tabIndex={-1}
+                    aria-label={showPass ? 'Сховати пароль' : 'Показати пароль'}>
+                    <EyeIcon open={showPass} />
+                  </button>
+                </div>
               </div>
               <div className="field">
                 <label>Повторити <span className="req">*</span></label>
-                <input name="confirm" type="password" value={form.confirm} onChange={set} placeholder="••••••" />
+                <div className="password-field">
+                  <input name="confirm" type={showConfirm ? 'text' : 'password'} value={form.confirm} onChange={set} placeholder="••••••" />
+                  <button type="button" className="password-toggle" onClick={() => setShowConfirm(v => !v)} tabIndex={-1}
+                    aria-label={showConfirm ? 'Сховати пароль' : 'Показати пароль'}>
+                    <EyeIcon open={showConfirm} />
+                  </button>
+                </div>
               </div>
             </div>
             <p className="cell-muted" style={{fontSize:'.8rem'}}>
