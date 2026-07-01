@@ -1,16 +1,69 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
+import { useFop } from '../context/FopContext';
 import { calculateRunningBalance } from '../utils/accountingLogic';
 import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
 import { parseFile } from '../utils/parser';
 import { parseBankFile } from '../utils/fileHandlers';
 
-const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '' };
+const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank' };
 const fmt = n => (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2 });
+const METHOD_LABEL = { bank: 'Банк', cash: 'Каса', acquiring: 'Еквайринг' };
+
+// ─── Журнал-ордер (спрощена форма для ФОП): окремо каса, окремо банк ─────
+const buildJournalOrderHtml = (rows, { dateStart, dateEnd, activeFop }) => {
+  const cashRows = calculateRunningBalance(
+    rows.filter(r => r.paymentMethod === 'cash').sort((a,b)=>(a.date||'').localeCompare(b.date||''))
+  );
+  const bankRows = calculateRunningBalance(
+    rows.filter(r => r.paymentMethod !== 'cash').sort((a,b)=>(a.date||'').localeCompare(b.date||''))
+  );
+
+  const section = (title, list) => {
+    if (list.length === 0) return `<h3>${title}</h3><p class="cell-muted">Операцій немає</p>`;
+    const body = list.map((t, i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td>${t.date||''}</td>
+        <td>${t.counterparty||'—'}</td>
+        <td>${t.description||''}</td>
+        <td align="right">${t.type==='income' ? fmt(t.amount) : ''}</td>
+        <td align="right">${t.type==='expense' ? fmt(t.amount) : ''}</td>
+        <td align="right"><b>${fmt(t.balance)}</b></td>
+      </tr>`).join('');
+    const totalIn  = list.filter(t=>t.type==='income').reduce((s,t)=>s+(+t.amount||0),0);
+    const totalOut = list.filter(t=>t.type==='expense').reduce((s,t)=>s+(+t.amount||0),0);
+    return `<h3>${title}</h3>
+      <table>
+        <thead><tr><th>№</th><th>Дата</th><th>Контрагент</th><th>Зміст операції</th><th>Надходження</th><th>Списання</th><th>Залишок</th></tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr class="total-row"><td colspan="4" align="right">Разом:</td><td align="right">${fmt(totalIn)}</td><td align="right">${fmt(totalOut)}</td><td></td></tr></tfoot>
+      </table>`;
+  };
+
+  return `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
+<title>Журнал-ордер</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif;font-size:12px;margin:24px;color:#111}
+  h2{font-size:16px;margin:0 0 4px} h3{font-size:13px;margin:22px 0 6px}
+  table{width:100%;border-collapse:collapse;margin:6px 0}
+  td,th{border:1px solid #aaa;padding:4px 7px} th{background:#f0f0f0;font-weight:600}
+  .total-row td{font-weight:700;background:#f8f8f8}
+  @media print{body{margin:12mm}}
+</style></head><body>
+<h2>Журнал-ордер (спрощена форма обліку)</h2>
+<p>ФОП ${activeFop?.fullName||''}${activeFop?.rnokpp?` · РНОКПП ${activeFop.rnokpp}`:''}</p>
+<p>Період: ${dateStart||'—'} — ${dateEnd||'—'}</p>
+${section('Каса', cashRows)}
+${section('Банк / еквайринг', bankRows)}
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
+};
 
 const JournalView = () => {
   const { transactions, addTransaction, deleteTransaction, clients, addClient } = useData();
+  const { activeFop } = useFop();
   const [showForm, setShowForm]   = useState(false);
   const [opType, setOpType]       = useState('income');
   const [form, setForm]           = useState(EMPTY);
@@ -47,7 +100,7 @@ const JournalView = () => {
     try {
       const rows = await parseFile(file);
       if (!rows || rows.length === 0) throw new Error('У файлі не знайдено жодного рядка з даними');
-      setReviewRows(rows.map(r => ({ ...r, type: r.type || opType })));
+      setReviewRows(rows.map(r => ({ ...r, type: r.type || opType, paymentMethod: r.paymentMethod || 'cash' })));
       setIsBankImport(false);
     } catch (e) {
       setParseErr(e.message || 'Не вдалося розпізнати файл');
@@ -64,6 +117,7 @@ const JournalView = () => {
       amount:      r.amount,
       description: r.description || '',
       type:        (r.type === 'incoming' ? 'income' : r.type === 'outgoing' ? 'expense' : r.type) || opType,
+      paymentMethod: r.paymentMethod || (isBankImport ? 'bank' : 'cash'),
     }));
     setShowForm(false);
     setReviewRows(null);
@@ -156,6 +210,13 @@ const JournalView = () => {
     setSelected(new Set());
   };
 
+  const handlePrintJournalOrder = () => {
+    const html = buildJournalOrderHtml(filtered, { dateStart: filter.dateStart, dateEnd: filter.dateEnd, activeFop });
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (w) { w.document.write(html); w.document.close(); }
+    else alert('Дозвольте спливаючі вікна для цього сайту, щоб відкрити журнал-ордер для друку.');
+  };
+
   return (
     <div className="view-journal">
       <div className="view-toolbar">
@@ -165,6 +226,7 @@ const JournalView = () => {
           <button className="btn btn--danger"  onClick={() => openForm('expense')}>− Списання</button>
           <button className="btn btn--ghost"   onClick={openUpload}>⇪ Завантажити з файлу</button>
           <button className="btn btn--ghost"   onClick={() => statementRef.current?.click()}>⇪ Імпорт виписки (CSV/MT940)</button>
+          <button className="btn btn--ghost"   onClick={handlePrintJournalOrder} title="Друк журналу-ордера за поточним фільтром">⇩ Журнал-ордер</button>
           <input
             ref={statementRef}
             type="file"
@@ -227,6 +289,14 @@ const JournalView = () => {
               <label>Примітка</label>
               <input name="description" value={form.description} onChange={set} placeholder="Опис операції" />
             </div>
+            <div className="field">
+              <label>Спосіб оплати</label>
+              <select name="paymentMethod" value={form.paymentMethod} onChange={set}>
+                <option value="bank">Банк</option>
+                <option value="cash">Каса (готівка)</option>
+                <option value="acquiring">Еквайринг</option>
+              </select>
+            </div>
           </div>
           <div className="form-actions">
             <button className="btn btn--primary" onClick={handleSave}>Зберегти</button>
@@ -256,6 +326,7 @@ const JournalView = () => {
               </th>
               <th>Дата</th>
               <th>Тип</th>
+              <th>Спосіб</th>
               <th>Контрагент</th>
               <th style={{textAlign:'right'}}>Сума, грн</th>
               <th>Примітка</th>
@@ -265,7 +336,7 @@ const JournalView = () => {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={8} className="table-empty">Операцій немає</td></tr>
+              <tr><td colSpan={9} className="table-empty">Операцій немає</td></tr>
             ) : rows.map(row => (
               <tr key={row.id} className={row.type==='income'?'row-income':'row-expense'}>
                 <td>
@@ -278,6 +349,7 @@ const JournalView = () => {
                     {row.type==='income'?'Надходження':'Списання'}
                   </span>
                 </td>
+                <td className="cell-muted">{METHOD_LABEL[row.paymentMethod] || 'Банк'}</td>
                 <td>{row.counterparty||'—'}</td>
                 <td style={{textAlign:'right',fontWeight:600}}>{fmt(row.amount)}</td>
                 <td className="cell-muted">{row.description||'—'}</td>

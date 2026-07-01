@@ -47,6 +47,7 @@ const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false }) => {
               <th style={{width:32}}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
               <th>Дата</th>
               <th>Тип</th>
+              <th>Спосіб</th>
               <th>Контрагент</th>
               <th style={{textAlign:'right'}}>Сума, грн</th>
               <th>Примітка</th>
@@ -61,6 +62,13 @@ const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false }) => {
                 <td>
                   <select className="table-input" value={row.type || (isBankImport ? 'incoming' : 'income')} onChange={e => handleChange(idx, 'type', e.target.value)}>
                     {typeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </td>
+                <td>
+                  <select className="table-input" value={row.paymentMethod || (isBankImport ? 'bank' : 'cash')} onChange={e => handleChange(idx, 'paymentMethod', e.target.value)}>
+                    <option value="bank">Банк</option>
+                    <option value="cash">Каса</option>
+                    <option value="acquiring">Еквайринг</option>
                   </select>
                 </td>
                 <td><input className="table-input" value={row.counterparty || ''} onChange={e => handleChange(idx, 'counterparty', e.target.value)} placeholder="Контрагент" /></td>
