@@ -63,8 +63,8 @@ const DebtorsView = () => {
     if (col.key === 'status') {
       if (row.isAuto) {
         return (
-          <span className={`badge badge--${row.status === 'paid' ? 'success' : row.status === 'advance' ? 'warning' : 'muted'}`}>
-            {row.status === 'advance' ? 'Аванс' : row.status === 'paid' ? 'Погашено' : 'Очікує'}
+          <span className={`badge badge--${row.status === 'paid' ? 'success' : row.status === 'overdue' ? 'danger' : row.status === 'advance' ? 'warning' : 'muted'}`}>
+            {row.status === 'advance' ? 'Аванс' : row.status === 'paid' ? 'Погашено' : row.status === 'overdue' ? 'Просрочено' : 'Очікує'}
           </span>
         );
       }

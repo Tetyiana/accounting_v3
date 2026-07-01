@@ -246,6 +246,7 @@ export const computeAutoDebts = ({ invoices = [], acts = [], payments = [] }) =>
 
     // Перевіряємо чи є акт (якщо є — це реальна заборгованість, не аванс)
     const hasSignedAct = acts.some(a => a.invoiceId === inv.id && a.status === 'signed');
+    const isOverdue = inv.dueDate && inv.dueDate < new Date().toISOString().slice(0,10);
 
     debts.push({
       id:           `auto_${inv.id}`,
@@ -256,10 +257,12 @@ export const computeAutoDebts = ({ invoices = [], acts = [], payments = [] }) =>
       amount:       remaining,
       date:         inv.date,
       dueDate:      inv.dueDate || '',
-      status:       hasSignedAct ? 'pending' : 'advance',
-      note:         hasSignedAct
-                      ? `Рах. №${inv.number}, акт підписано`
-                      : `Рах. №${inv.number}, аванс (акт не підписано)`,
+      status:       isOverdue ? 'overdue' : (hasSignedAct ? 'pending' : 'advance'),
+      note:         isOverdue
+                      ? `Рах. №${inv.number}, термін оплати минув (${inv.dueDate})`
+                      : hasSignedAct
+                        ? `Рах. №${inv.number}, акт підписано`
+                        : `Рах. №${inv.number}, аванс (акт не підписано)`,
     });
   });
 

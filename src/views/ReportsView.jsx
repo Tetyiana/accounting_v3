@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
 import { TAX_STRATEGIES, ESV_AMOUNT } from '../utils/taxLogic';
+import { buildLedgerEntries, LEDGER_ACCOUNTS } from '../utils/accountingLogic';
 import { exportJSON, exportCSV } from '../utils/exportUtils';
 
 const ReportsView = () => {
@@ -37,6 +38,7 @@ const ReportsView = () => {
       tax: calc.tax, breakdown: calc.breakdown, note: calc.note,
       group: group?.label, count: inRange.length, rows: inRange,
       paidToBudget, budgetBalance: calc.tax - paidToBudget,
+      ledgerEntries: buildLedgerEntries(inRange),
     };
   }, [generated, transactions, dateStart, dateEnd, settings]);
 
@@ -140,6 +142,67 @@ const ReportsView = () => {
           <div className="report-hint">
             Дані розраховані на основі записів Журналу операцій. Для офіційної звітності — експортуйте
             звіт нижче і завантажте у кабінет платника податків.
+          </div>
+
+          <div className="report-card" style={{
+            border: '1px solid var(--border-light)', borderRadius: 12, padding: '16px 18px', marginBottom: 18,
+          }}>
+            <div style={{fontWeight:600, marginBottom: 10}}>Бухгалтерські проводки (спрощений облік)</div>
+            <div className="cell-muted" style={{fontSize:'.78rem', marginBottom: 10}}>
+              Касовий метод: Дт/Кт формуються по факту руху коштів (без рахунків 361/631) —
+              це відповідає обліку ФОП на спрощеній системі. Рахунки: 301 Касса · 311 Банк · 641 Розрахунки за податками ·
+              651 Розрахунки за ЄСВ · 661 Розрахунки з оплати праці · 701 Доход · 84 Інші операційні витрати.
+            </div>
+            {report.ledgerEntries.length === 0 ? (
+              <p className="cell-muted">Проводок за цей період немає</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Дата</th>
+                      <th>Зміст операції</th>
+                      <th>Дт</th>
+                      <th>Кт</th>
+                      <th style={{textAlign:'right'}}>Сума, грн</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.ledgerEntries.map(e => (
+                      <tr key={e.id}>
+                        <td>{e.date}</td>
+                        <td className="cell-muted">{e.description || e.counterparty}</td>
+                        <td>{e.debit.code} <span className="cell-muted">({e.debit.label})</span></td>
+                        <td>{e.credit.code} <span className="cell-muted">({e.credit.label})</span></td>
+                        <td style={{textAlign:'right', fontWeight:600}}>{fmt(e.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{marginTop: 10}}>
+              <button
+                className="btn btn--ghost btn--sm"
+                onClick={() => exportCSV(
+                  report.ledgerEntries.map(e => ({
+                    date: e.date, description: e.description || e.counterparty,
+                    debit: `${e.debit.code} ${e.debit.label}`, credit: `${e.credit.code} ${e.credit.label}`,
+                    amount: e.amount,
+                  })),
+                  [
+                    { key: 'date', label: 'Дата' },
+                    { key: 'description', label: 'Зміст операції' },
+                    { key: 'debit', label: 'Дт' },
+                    { key: 'credit', label: 'Кт' },
+                    { key: 'amount', label: 'Сума' },
+                  ],
+                  `provodky_${dateStart}_${dateEnd}.csv`
+                )}
+              >
+                ⇩ Експорт проводок CSV
+              </button>
+            </div>
           </div>
 
           <div style={{display:'flex', gap: 10, marginTop: 12, flexWrap: 'wrap'}}>
