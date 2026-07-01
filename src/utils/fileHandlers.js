@@ -66,8 +66,10 @@ const isBankName = n => BANK_RE.test((n||'').trim());
 const findNameCol = (h) => {
   const checks = [
     c => c === 'контрагент',
+    c => c === 'кореспондент',
     c => c.includes('найменування') && !c.includes('банку'),
     c => c.includes('контрагент') && !c.includes('єдрпоу') && !c.includes('іпн') && !c.includes('рахунок') && !c.includes('код'),
+    c => c.includes('кореспондент') && !c.includes('єдрпоу') && !c.includes('іпн') && !c.includes('рахунок') && !c.includes('код'),
     c => c.includes('одержувач') || c.includes('платник'),
   ];
   for (const check of checks) {
@@ -79,9 +81,15 @@ const findNameCol = (h) => {
 
 const findPurposeCol = (h) => h.findIndex(c => c.includes('призначення'));
 
-const findEdrpouCol = (h) => h.findIndex(c =>
-  (c.includes('єдрпоу')||c.includes('іпн')) && (c.includes('контрагент')||!c.includes('банку'))
-);
+const findEdrpouCol = (h) => {
+  // Спочатку шукаємо явно "ЄДРПОУ контрагента"/"ЄДРПОУ кореспондента" —
+  // щоб не сплутати з власним ЄДРПОУ ФОП (перша колонка у виписці)
+  const iCounterparty = h.findIndex(c =>
+    (c.includes('єдрпоу')||c.includes('іпн')) && (c.includes('контрагент')||c.includes('кореспондент'))
+  );
+  if (iCounterparty >= 0) return iCounterparty;
+  return h.findIndex(c => (c.includes('єдрпоу')||c.includes('іпн')) && !c.includes('банку'));
+};
 
 // Знаходимо колонки суми: можлива одна зі знаком АБО дві (дохід/видаток)
 const findAmountCols = (h) => {
