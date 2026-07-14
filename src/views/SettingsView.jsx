@@ -6,6 +6,13 @@ import { useFop } from '../context/FopContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
 import FopProfileView from './FopProfileView';
 
+const FONT_SCALES = [
+  { id: 'small',  label: 'Малий',        sample: '13px' },
+  { id: 'normal', label: 'Стандартний',  sample: '14px' },
+  { id: 'large',  label: 'Великий',      sample: '16px' },
+  { id: 'xlarge', label: 'Дуже великий', sample: '18px' },
+];
+
 const SettingsView = () => {
   const { settings }           = useSettings();
   const { user, logout }       = useAuth();
@@ -14,6 +21,13 @@ const SettingsView = () => {
   const fileRef = useRef(null);
   const [msg, setMsg]         = useState('');
   const [editFop, setEditFop] = useState(false);
+  const [fontScale, setFontScale] = useState(() => localStorage.getItem('app_font_scale') || 'normal');
+
+  const applyFontScale = (id) => {
+    setFontScale(id);
+    localStorage.setItem('app_font_scale', id);
+    document.documentElement.setAttribute('data-font-scale', id);
+  };
 
   if (editFop) {
     return <FopProfileView mode="edit" fopId={activeFop?.id} onCancel={() => setEditFop(false)} />;
@@ -51,6 +65,26 @@ const SettingsView = () => {
   return (
     <div className="view-settings">
       <h2 className="view-title">Налаштування</h2>
+
+      <div className="settings-section">
+        <h3>Розмір шрифту</h3>
+        <p className="cell-muted" style={{fontSize:'.83rem', marginBottom:10}}>
+          Збільшіть розмір тексту якщо важко читати на екрані телефону чи ноутбука.
+          Застосовується одразу до всієї програми.
+        </p>
+        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+          {FONT_SCALES.map(fs => (
+            <button
+              key={fs.id}
+              className={`tab-pill${fontScale === fs.id ? ' tab-pill--active' : ''}`}
+              onClick={() => applyFontScale(fs.id)}
+              style={{minHeight:44}}
+            >
+              {fs.label} <span style={{opacity:.6, fontSize:'.78em'}}>({fs.sample})</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* ─── Профіль ФОП ─────────────────────────────────── */}
       <div className="settings-section">

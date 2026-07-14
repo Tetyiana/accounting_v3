@@ -37,6 +37,12 @@ const KdvView = () => {
 
   const config = KDV_CONFIGS[settings.taxGroup] || KDV_CONFIGS['3_5'];
 
+  const diag = useMemo(() => {
+    const incomeTx = transactions.filter(t => t.type === 'income');
+    const years = [...new Set(incomeTx.map(t => (t.date||'').slice(0,4)).filter(Boolean))].sort();
+    return { totalTx: transactions.length, incomeTx: incomeTx.length, years };
+  }, [transactions]);
+
   const allEntries = useMemo(() => {
     try {
       return buildKdvEntries({ invoices, acts, payments, transactions, taxGroup: settings.taxGroup }) || [];
@@ -144,14 +150,22 @@ const KdvView = () => {
       {/* Реквізити ФОП */}
       <div className="kdv-fop-info">
         ФОП {activeFop?.fullName} · РНОКПП {activeFop?.rnokpp}
-        {allEntries.length > 0 && (
+        {allEntries.length > 0 && entries.length > 0 && (
           <span style={{marginLeft:12, color:'var(--success)'}}>
             Всього записів: {allEntries.length} · У фільтрі: {entries.length}
           </span>
         )}
+        {allEntries.length > 0 && entries.length === 0 && (
+          <span style={{marginLeft:12, color:'var(--warning)'}}>
+            Є {allEntries.length} записів, але не за {selYear} рік.
+            Доступні роки: {diag.years.join(', ') || '—'} — змініть рік у фільтрі нижче.
+          </span>
+        )}
         {allEntries.length === 0 && (
           <span style={{marginLeft:12, color:'var(--error)'}}>
-            Немає записів — перевірте чи є операції типу «Надходження» у Журналі
+            Записів немає. Транзакцій у журналі: {diag.totalTx},
+            з них «Надходження»: {diag.incomeTx}.
+            {diag.incomeTx === 0 && ' Імпортуйте виписку або додайте надходження вручну.'}
           </span>
         )}
       </div>
@@ -171,7 +185,7 @@ const KdvView = () => {
         <div className="field">
           <label style={{ fontSize: '.78rem' }}>Рік</label>
           <select value={selYear} onChange={e => setSelYear(+e.target.value)} style={{ width: 100 }}>
-            {[year-1, year, year+1].map(y => <option key={y}>{y}</option>)}
+            {[...new Set([...diag.years.map(Number), year-1, year, year+1])].sort().map(y => <option key={y}>{y}</option>)}
           </select>
         </div>
         <div className="field">

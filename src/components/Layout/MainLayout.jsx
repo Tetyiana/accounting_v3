@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useFop } from '../../context/FopContext';
@@ -58,6 +58,16 @@ const VIEWS = {
   settings:  ()     => <SettingsView />,
 };
 
+const useIsMobile = () => {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return isMobile;
+};
+
 const MainLayout = () => {
   const { user, logout }    = useAuth();
   const { settings }        = useSettings();
@@ -65,6 +75,13 @@ const MainLayout = () => {
   const [active, setActive] = useState('home');
   const [sideCollapsed, setSideCollapsed] = useState(false);
   const [fopDropdown, setFopDropdown] = useState(false);
+  const isMobile = useIsMobile();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const selectTab = (id) => {
+    setActive(id);
+    if (isMobile) setDrawerOpen(false);
+  };
 
   const visibleTabs = TABS.filter(t => {
     if (t.setting) return settings[t.setting];
@@ -87,14 +104,18 @@ const MainLayout = () => {
     : '?';
 
   return (
-    <div className={`main-layout${sideCollapsed ? ' sidebar-collapsed' : ''}`}>
+    <div className={`main-layout${sideCollapsed && !isMobile ? ' sidebar-collapsed' : ''}${isMobile ? ' is-mobile' : ''}`}>
 
       {/* ─── Header ─────────────────────────────────────────── */}
       <header className="app-header">
         <div className="header-left">
-          <button className="sidebar-toggle" onClick={() => setSideCollapsed(p => !p)} title="Згорнути меню">
-            {sideCollapsed ? '▶' : '◀'}
-          </button>
+          {isMobile ? (
+            <button className="hamburger-btn" onClick={() => setDrawerOpen(true)} title="Меню">☰</button>
+          ) : (
+            <button className="sidebar-toggle" onClick={() => setSideCollapsed(p => !p)} title="Згорнути меню">
+              {sideCollapsed ? '▶' : '◀'}
+            </button>
+          )}
           <span className="header-logo">Облік ФОП</span>
 
           {/* ─── Перемикач ФОП (як вибір компанії в 1С) ──── */}
@@ -154,6 +175,7 @@ const MainLayout = () => {
       </header>
 
       {/* ─── Sidebar ────────────────────────────────────────── */}
+      {!isMobile && (
       <aside className="sidebar">
         <nav className="sidebar-nav">
           <div className="sidebar-group">
@@ -161,7 +183,7 @@ const MainLayout = () => {
               <button
                 key={tab.id}
                 className={`sidebar-item${active === tab.id ? ' sidebar-item--active' : ''}`}
-                onClick={() => setActive(tab.id)}
+                onClick={() => selectTab(tab.id)}
                 title={tab.label}
               >
                 <span className="sidebar-item-icon">{tab.icon}</span>
@@ -176,7 +198,7 @@ const MainLayout = () => {
             <button
               key={tab.id}
               className={`sidebar-item${active === tab.id ? ' sidebar-item--active' : ''}`}
-              onClick={() => setActive(tab.id)}
+              onClick={() => selectTab(tab.id)}
             >
               <span className="sidebar-item-icon">{tab.icon}</span>
               <span className="sidebar-item-label">{tab.label}</span>
@@ -184,6 +206,47 @@ const MainLayout = () => {
           ))}
         </div>
       </aside>
+      )}
+
+      {isMobile && drawerOpen && (
+        <>
+          <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />
+          <aside className="sidebar sidebar--drawer">
+            <div className="drawer-header">
+              <span className="header-logo">Облік ФОП</span>
+              <button className="btn-close" onClick={() => setDrawerOpen(false)}>✕</button>
+            </div>
+        <nav className="sidebar-nav">
+          <div className="sidebar-group">
+            {mainTabs.map(tab => (
+              <button
+                key={tab.id}
+                className={`sidebar-item${active === tab.id ? ' sidebar-item--active' : ''}`}
+                onClick={() => selectTab(tab.id)}
+                title={tab.label}
+              >
+                <span className="sidebar-item-icon">{tab.icon}</span>
+                <span className="sidebar-item-label">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div className="sidebar-bottom">
+          {bottomTabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`sidebar-item${active === tab.id ? ' sidebar-item--active' : ''}`}
+              onClick={() => selectTab(tab.id)}
+            >
+              <span className="sidebar-item-icon">{tab.icon}</span>
+              <span className="sidebar-item-label">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+        </>
+      )}
 
       {/* ─── Content ────────────────────────────────────────── */}
       <main className="content-area">
