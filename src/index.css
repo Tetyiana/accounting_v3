@@ -1062,11 +1062,20 @@ body { font-size: 1rem; }
   display: flex; flex-direction: column;
   position: fixed; top: 0; left: 0; bottom: 0; z-index: 400;
   width: min(290px, 84vw);
-  background: #fff;
-  box-shadow: 4px 0 24px rgba(0,0,0,.18);
+  background: var(--mint-900);        /* темний як десктопний сайдбар:
+                                         білий текст пунктів меню видимий */
+  box-shadow: 4px 0 24px rgba(0,0,0,.28);
   animation: slideIn .22s ease;
   overflow-y: auto;
+  height: 100vh; top: 0;              /* перебиваємо sticky/height десктопного .sidebar */
+  position: fixed;
 }
+
+.sidebar--drawer .drawer-header {
+  border-bottom: 1px solid rgba(255,255,255,.14);
+}
+.sidebar--drawer .drawer-header .header-logo { color: #fff; }
+.sidebar--drawer .drawer-header .btn-close   { color: rgba(255,255,255,.8); }
 @keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
 .drawer-header {
