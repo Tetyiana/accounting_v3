@@ -10,6 +10,7 @@ import DebtorsView   from '../../views/DebtorsView';
 import SalesView     from '../../views/SalesView';
 import KdvView       from '../../views/KdvView';
 import DirectoriesView from '../../views/DirectoriesView';
+import RegistryView from '../../views/RegistryView';
 import DocumentsView from '../../views/DocumentsView';
 import ReportsView   from '../../views/ReportsView';
 import VatView       from '../../views/VatView';
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'journal',   label: 'Журнал операцій',        icon: '₴', group: 'main' },
   { id: 'sales',       label: 'Продажі/Закупівлі',  icon: '🗒', group: 'main' },
   { id: 'debtors',     label: 'Дебітори/Кредитори', icon: '⇄', group: 'main' },
+  { id: 'registry',    label: 'Реєстр документів',   icon: '🗂', group: 'main' },
   { id: 'directories', label: 'Довідники',           icon: '📋', group: 'main' },
   { id: 'warehouse', label: 'Склад',              icon: '▢', group: 'main', setting: 'useWarehouse' },
   { id: 'payroll',   label: 'Зарплата',           icon: '👥', group: 'main' },
@@ -48,6 +50,7 @@ const VIEWS = {
   sales:     ()     => <SalesView />,
   debtors:     ()     => <DebtorsView />,
   directories: ()     => <DirectoriesView />,
+  registry:    ()     => <RegistryView />,
   warehouse: ()     => <WarehouseView />,
   payroll:   ()     => <PayrollView />,
   documents: ()     => <DocumentsView />,
