@@ -2,8 +2,13 @@
 // Views працюють у camelCase — конвертація прозора на межі з базою.
 import { supabase } from './supabase';
 
-const snake = k => k.replace(/[A-Z]/g, c => '_' + c.toLowerCase());
-const camel = k => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+// Спец-кейси для абревіатур, які прямолінійна конвертація ламає
+// (useRRO → use_r_r_o замість use_rro)
+const SPECIAL       = { useRRO: 'use_rro' };
+const SPECIAL_BACK  = { use_rro: 'useRRO' };
+
+const snake = k => SPECIAL[k] || k.replace(/[A-Z]/g, c => '_' + c.toLowerCase());
+const camel = k => SPECIAL_BACK[k] || k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 // '' → null для дат (Postgres date не приймає порожній рядок)
 const isDateKey = k => k === 'date' || k.endsWith('_date') || k.endsWith('Date');
