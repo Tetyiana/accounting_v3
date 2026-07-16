@@ -20,7 +20,7 @@ import FopProfileView from '../../views/FopProfileView';
 
 const TABS = [
   { id: 'home',      label: 'Головна',           icon: '⌂', group: 'main' },
-  { id: 'journal',   label: 'Банк / Каса',        icon: '₴', group: 'main' },
+  { id: 'journal',   label: 'Журнал операцій',        icon: '₴', group: 'main' },
   { id: 'sales',       label: 'Продажі/Закупівлі',  icon: '🗒', group: 'main' },
   { id: 'debtors',     label: 'Дебітори/Кредитори', icon: '⇄', group: 'main' },
   { id: 'directories', label: 'Довідники',           icon: '📋', group: 'main' },

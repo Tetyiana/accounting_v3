@@ -70,7 +70,7 @@ const JournalView = () => {
   const [linkInvoiceId, setLinkInvoiceId] = useState('');
   const [opType, setOpType]       = useState('income');
   const [form, setForm]           = useState(EMPTY);
-  const [filter, setFilter]       = useState({ dateStart: '', dateEnd: '', counterparty: '' });
+  const [filter, setFilter]       = useState({ dateStart: '', dateEnd: '', counterparty: '', amountMin: '', amountMax: '', opKind: '' });
   const [err, setErr]             = useState('');
   const [isBankImport, setIsBankImport] = useState(false);
 
@@ -222,12 +222,23 @@ const JournalView = () => {
 
   const [selected, setSelected] = useState(new Set());
 
+  // Вид операції за маркерами походження
+  const opKindOf = (t) =>
+    t.payrollRecordId ? 'payroll' : t.invoicePaymentId ? 'invoice' : 'manual';
+
   const filtered = useMemo(() => {
     return transactions.filter(t => {
       const okS = !filter.dateStart || t.date >= filter.dateStart;
       const okE = !filter.dateEnd   || t.date <= filter.dateEnd;
       const okC = !filter.counterparty || (t.counterparty||'').toLowerCase().includes(filter.counterparty.toLowerCase());
-      return okS && okE && okC;
+      const a = +t.amount || 0;
+      const okMin = !filter.amountMin || a >= +filter.amountMin;
+      const okMax = !filter.amountMax || a <= +filter.amountMax;
+      const okK = !filter.opKind ||
+        (filter.opKind === 'income'  && t.type === 'income')  ||
+        (filter.opKind === 'expense' && t.type === 'expense') ||
+        filter.opKind === opKindOf(t);
+      return okS && okE && okC && okMin && okMax && okK;
     });
   }, [transactions, filter]);
 
@@ -373,6 +384,16 @@ const JournalView = () => {
         <input type="date" name="dateStart" value={filter.dateStart} onChange={setF} title="Дата з" />
         <input type="date" name="dateEnd"   value={filter.dateEnd}   onChange={setF} title="Дата по" />
         <input name="counterparty" value={filter.counterparty} onChange={setF} placeholder="Пошук по контрагенту" />
+        <input type="number" name="amountMin" value={filter.amountMin} onChange={setF} placeholder="Сума від" style={{maxWidth:110}} />
+        <input type="number" name="amountMax" value={filter.amountMax} onChange={setF} placeholder="Сума до" style={{maxWidth:110}} />
+        <select name="opKind" value={filter.opKind} onChange={setF} style={{maxWidth:180}}>
+          <option value="">Всі види операцій</option>
+          <option value="income">Надходження</option>
+          <option value="expense">Списання</option>
+          <option value="invoice">Оплати рахунків</option>
+          <option value="payroll">Зарплата</option>
+          <option value="manual">Ручні / виписка</option>
+        </select>
         {selected.size > 0 && (
           <button className="btn btn--danger btn--sm" onClick={deleteSelected}>
             Видалити вибрані ({selected.size})
