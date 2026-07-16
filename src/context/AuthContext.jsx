@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
     if (error) return { ok: false, error: translateAuthError(error.message) };
     // Якщо email-підтвердження вимкнено — сесія є одразу
     if (data.session) setUser(toSafeUser(data.user));
-    else return { ok: true, needConfirm: true };
+    else return { ok: false, error: 'Лист підтвердження надіслано на ' + email + '. Підтвердіть пошту і увійдіть.' };
     return { ok: true };
   };
 
@@ -68,7 +68,8 @@ const translateAuthError = (msg) => {
   if (/invalid login credentials/i.test(msg)) return 'Невірний email або пароль';
   if (/already registered/i.test(msg))        return 'Цей email вже зареєстровано';
   if (/at least 6 characters/i.test(msg))     return 'Пароль має бути щонайменше 6 символів';
-  if (/rate limit/i.test(msg))                return 'Забагато спроб — зачекайте хвилину';
+  if (/rate limit|only request this after/i.test(msg)) return 'Забагато спроб — зачекайте хвилину і спробуйте увійти (реєстрація вже могла пройти)';
+  if (/email not confirmed/i.test(msg))       return 'Email не підтверджено — перевірте пошту (лист від Supabase) або зверніться до адміністратора';
   return msg;
 };
 
