@@ -16,6 +16,7 @@ import {
 } from '../utils/payrollLogic';
 import { generatePayrollXml, downloadXml } from '../utils/payrollXml';
 import { fmtMoney } from '../utils/documentLogic';
+import { openPrintWindow } from '../utils/printWindow';
 
 // ─── Форма картки працівника ─────────────────────────────────────────
 const EmployeeForm = ({ initial, onSave, onCancel }) => {
@@ -404,10 +405,7 @@ ${employee?.iban?`<p style="margin-top:8px">IBAN: ${employee.iban}</p>`:''}
 <p style="margin-top:12px;font-size:10px;color:#666">Дата: ${new Date().toLocaleDateString('uk-UA')}</p>
 </body></html>`;
 
-  const w = window.open('', '_blank');
-  w.document.write(html);
-  w.document.close();
-  w.print();
+  openPrintWindow(html);
 };
 
 // ─── Головний компонент ─────────────────────────────────────────────

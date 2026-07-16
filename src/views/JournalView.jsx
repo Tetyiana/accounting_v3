@@ -6,6 +6,7 @@ import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
 import { parseFile } from '../utils/parser';
 import { parseBankFile } from '../utils/fileHandlers';
+import { openPrintWindow } from '../utils/printWindow';
 
 const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank' };
 const fmt = n => (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2 });
@@ -62,9 +63,11 @@ ${section('Банк / еквайринг', bankRows)}
 };
 
 const JournalView = () => {
-  const { transactions, addTransaction, deleteTransaction, clients, addClient } = useData();
+  const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment } = useData();
   const { activeFop } = useFop();
   const [showForm, setShowForm]   = useState(false);
+  const [editId, setEditId]       = useState(null);
+  const [linkInvoiceId, setLinkInvoiceId] = useState('');
   const [opType, setOpType]       = useState('income');
   const [form, setForm]           = useState(EMPTY);
   const [filter, setFilter]       = useState({ dateStart: '', dateEnd: '', counterparty: '' });
@@ -86,12 +89,56 @@ const JournalView = () => {
   const openForm = (type) => { setOpType(type); setForm(EMPTY); setErr(''); setShowForm(true); setUploadMode(false); setIsBankImport(false); };
   const openUpload = () => { setOpType('income'); setErr(''); setParseErr(''); setReviewRows(null); setShowForm(true); setUploadMode(true); setIsBankImport(false); };
 
+  // Рахунки з залишком до оплати (баги 1/7/8: прив'язка операції до рахунку)
+  const unpaidInvoices = useMemo(() => {
+    const dir = opType === 'income' ? 'outgoing' : 'incoming';
+    return invoices
+      .filter(i => i.direction === dir && i.status !== 'cancelled')
+      .map(i => {
+        const paid = payments.filter(p => p.invoiceId === i.id).reduce((s, p) => s + (+p.amount || 0), 0);
+        return { ...i, remaining: (+i.total || 0) - paid };
+      })
+      .filter(i => i.remaining > 0.009);
+  }, [invoices, payments, opType]);
+
   const handleSave = () => {
     if (!form.counterparty || !form.amount || !form.date) { setErr('Заповніть обов\'язкові поля'); return; }
     if (isNaN(+form.amount) || +form.amount <= 0) { setErr('Некоректна сума'); return; }
-    addTransaction({ ...form, type: opType });
+    if (editId) {
+      updateTransaction(editId, { ...form, type: opType });
+      setEditId(null);
+    } else {
+      const inv = unpaidInvoices.find(i => i.id === linkInvoiceId);
+      if (inv) {
+        // Прив'язка до рахунку: створює оплату + авто-транзакцію,
+        // статус рахунку і дебітори оновлюються автоматично
+        addPayment({
+          date: form.date, amount: +form.amount,
+          direction: inv.direction, paymentMethod: form.paymentMethod || 'bank',
+          counterparty: form.counterparty, notes: form.description,
+        }, { invoice: inv });
+      } else {
+        addTransaction({ ...form, type: opType });
+      }
+      // Баг 5: контрагент автоматично в довідник (якщо ще немає)
+      const name = form.counterparty.trim();
+      if (name && !clients.some(c => c.name.trim().toLowerCase() === name.toLowerCase())) {
+        addClient({ name });
+      }
+    }
+    setLinkInvoiceId('');
     setShowForm(false);
     setErr('');
+  };
+
+  // Баг 6: редагування запису журналу
+  const startEdit = (row) => {
+    setEditId(row.id);
+    setOpType(row.type);
+    setForm({ date: row.date, counterparty: row.counterparty || '', amount: row.amount, description: row.description || '' });
+    setErr('');
+    setShowForm(true);
+    setUploadMode(false);
   };
 
   const handleFileProcess = async (file) => {
@@ -212,9 +259,7 @@ const JournalView = () => {
 
   const handlePrintJournalOrder = () => {
     const html = buildJournalOrderHtml(filtered, { dateStart: filter.dateStart, dateEnd: filter.dateEnd, activeFop });
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (w) { w.document.write(html); w.document.close(); }
-    else alert('Дозвольте спливаючі вікна для цього сайту, щоб відкрити журнал-ордер для друку.');
+    openPrintWindow(html);
   };
 
   return (
@@ -268,7 +313,7 @@ const JournalView = () => {
       {showForm && !uploadMode && (
         <div className="inline-form">
           <div className="inline-form-header">
-            <span>{opType === 'income' ? 'Нове надходження' : 'Нове списання'}</span>
+            <span>{editId ? 'Редагування операції' : (opType === 'income' ? 'Нове надходження' : 'Нове списання')}</span>
             <button className="btn-close" onClick={() => setShowForm(false)}>✕</button>
           </div>
           {err && <div className="form-error">{err}</div>}
@@ -297,6 +342,25 @@ const JournalView = () => {
                 <option value="acquiring">Еквайринг</option>
               </select>
             </div>
+            {!editId && unpaidInvoices.length > 0 && (
+              <div className="field">
+                <label>Закрити рахунок (опційно)</label>
+                <select value={linkInvoiceId} onChange={e => {
+                  setLinkInvoiceId(e.target.value);
+                  const inv = unpaidInvoices.find(i => i.id === e.target.value);
+                  if (inv) setForm(f => ({ ...f,
+                    counterparty: f.counterparty || inv.clientName || '',
+                    amount: f.amount || inv.remaining }));
+                }}>
+                  <option value="">— без прив'язки —</option>
+                  {unpaidInvoices.map(i => (
+                    <option key={i.id} value={i.id}>
+                      №{i.number} · {i.clientName} · залишок {i.remaining.toFixed(2)} грн
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <div className="form-actions">
             <button className="btn btn--primary" onClick={handleSave}>Зберегти</button>
@@ -355,10 +419,13 @@ const JournalView = () => {
                 <td className="cell-muted">{row.description||'—'}</td>
                 <td style={{textAlign:'right'}}>{fmt(row.balance)}</td>
                 <td>
-                  <button className="btn-icon btn-icon--del"
-                    onClick={() => window.confirm('Перемістити в кошик?') && deleteTransaction(row.id)}>
-                    ✕
-                  </button>
+                  <div style={{display:'flex', gap:4}}>
+                    <button className="btn btn--ghost btn--sm" title="Редагувати" onClick={() => startEdit(row)}>ред.</button>
+                    <button className="btn-icon btn-icon--del"
+                      onClick={() => window.confirm('Перемістити в кошик?') && deleteTransaction(row.id)}>
+                      ✕
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

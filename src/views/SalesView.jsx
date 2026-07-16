@@ -12,16 +12,9 @@ import {
 } from '../utils/documentLogic';
 import Autocomplete from '../components/common/Autocomplete';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
+import { openPrintWindow } from '../utils/printWindow';
 
-const openPrintWindow = (html) => {
-  const w = window.open('', '_blank', 'width=900,height=700');
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-  } else {
-    alert('Дозвольте спливаючі вікна для цього сайту, щоб відкрити документ для друку.');
-  }
-};
+
 
 const DOC_PRINT_STYLE = `
   body{font-family:Arial,Helvetica,sans-serif;font-size:12px;margin:30px;color:#111}
