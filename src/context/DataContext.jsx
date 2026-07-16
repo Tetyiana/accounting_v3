@@ -1,380 +1,524 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { round2 } from '../utils/payrollLogic';
+import { dbSelect, dbInsert, dbUpdate, dbDelete, newId } from '../lib/db';
+
+// Всі дані ФОПа — у Supabase. API контексту незмінний (camelCase, синхронні
+// функції): UUID генерується на клієнті, запис у базу — у фоні.
 
 const DataContext = createContext();
 
-const KEYS = (fopId) => ({
-  transactions:   `fop_tx_${fopId}`,
-  movements:      `fop_mv_${fopId}`,
-  debts:          `fop_debts_${fopId}`,
-  vatInvoices:    `fop_vat_${fopId}`,
-  invoices:       `fop_inv_${fopId}`,
-  acts:           `fop_acts_${fopId}`,
-  payments:       `fop_pay_${fopId}`,
-  employees:      `fop_emp_${fopId}`,
-  payrollRecords: `fop_payroll_${fopId}`,
-  leaveRecords:   `fop_leave_${fopId}`,
-  clients:        `fop_clients_${fopId}`,
-  products:       `fop_products_${fopId}`,
-  trash:          `fop_trash_${fopId}`,
+// payroll: плоскі поля розрахунку ↔ jsonb data
+const payrollToRow  = (r) => {
+  const { id, fopId, employeeId, period, status, createdAt, ...rest } = r;
+  return { id, fopId, employeeId, period, status, data: rest };
+};
+const payrollFromRow = (r) => ({
+  id: r.id, fopId: r.fopId, employeeId: r.employeeId,
+  period: r.period, status: r.status, ...(r.data || {}),
 });
 
-const load = (key, fallback) => {
-  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
-  catch { return fallback; }
-};
+// trash: kind/data (views) ↔ entity_type/entity_data (схема)
+const trashToRow   = (t) => ({ id: t.id, fopId: t.fopId, entityType: t.kind, entityData: t.data });
+const trashFromRow = (t) => ({ id: t.id, kind: t.entityType, data: t.entityData, deletedAt: t.deletedAt });
 
-const mkId = () => `${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+// acts: у views поле type, у схемі act_type
+const actToRow   = ({ type, ...a }) => ({ ...a, actType: type });
+const actFromRow = ({ actType, ...a }) => ({ ...a, type: actType });
 
 export const DataProvider = ({ fopId, children }) => {
-  const K = useMemo(() => KEYS(fopId), [fopId]);
+  const [transactions,   setTransactions]   = useState([]);
+  const [movements,      setMovements]      = useState([]);
+  const [debts,          setDebts]          = useState([]);
+  const [vatInvoices,    setVatInvoices]    = useState([]);
+  const [invoices,       setInvoices]       = useState([]);
+  const [acts,           setActs]           = useState([]);
+  const [payments,       setPayments]       = useState([]);
+  const [employees,      setEmployees]      = useState([]);
+  const [payrollRecords, setPayrollRecords] = useState([]);
+  const [leaveRecords,   setLeaveRecords]   = useState([]);
+  const [hrOrders,       setHrOrders]       = useState([]);
+  const [clients,        setClients]        = useState([]);
+  const [products,       setProducts]       = useState([]);
+  const [trash,          setTrash]          = useState([]);
+  const [loading,        setLoading]        = useState(true);
 
-  const [transactions, setTransactions] = useState(() => load(K.transactions, []));
-  const [movements,    setMovements]    = useState(() => load(K.movements, []));
-  const [debts,        setDebts]        = useState(() => load(K.debts, []));
-  const [vatInvoices,  setVatInvoices]  = useState(() => load(K.vatInvoices, []));
-  const [invoices,     setInvoices]     = useState(() => load(K.invoices, []));
-  const [acts,         setActs]         = useState(() => load(K.acts, []));
-  const [payments,     setPayments]     = useState(() => load(K.payments, []));
-  const [employees,    setEmployees]    = useState(() => load(K.employees, []));
-  const [payrollRecords, setPayrollRecords] = useState(() => load(K.payrollRecords, []));
-  const [leaveRecords,   setLeaveRecords]   = useState(() => load(K.leaveRecords, []));
-  const [clients,      setClients]      = useState(() => load(K.clients, []));
-  const [products,     setProducts]     = useState(() => load(K.products, []));
-  const [trash,        setTrash]        = useState(() => load(K.trash, []));
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    Promise.all([
+      dbSelect('transactions',    { fopId }),
+      dbSelect('movements',       { fopId }),
+      dbSelect('debts',           { fopId }),
+      dbSelect('vat_invoices',    { fopId }),
+      dbSelect('invoices',        { fopId }),
+      dbSelect('acts',            { fopId }),
+      dbSelect('payments',        { fopId }),
+      dbSelect('employees',       { fopId }),
+      dbSelect('payroll_records', { fopId }),
+      dbSelect('leave_records',   { fopId }),
+      dbSelect('hr_orders',       { fopId }),
+      dbSelect('clients',         { fopId }),
+      dbSelect('products',        { fopId }),
+      dbSelect('trash',           { fopId }),
+    ]).then(([tx, mv, db_, vat, inv, ac, pay, emp, pr, lv, hro, cl, prod, tr]) => {
+      if (!alive) return;
+      setTransactions(tx);
+      setMovements(mv);
+      setDebts(db_);
+      setVatInvoices(vat);
+      setInvoices(inv);
+      setActs(ac.map(actFromRow));
+      setPayments(pay);
+      setEmployees(emp);
+      setPayrollRecords(pr.map(payrollFromRow));
+      setLeaveRecords(lv);
+      setHrOrders(hro);
+      setClients(cl);
+      setProducts(prod);
+      setTrash(tr.map(trashFromRow));
+      setLoading(false);
+    });
+    return () => { alive = false; };
+  }, [fopId]);
 
-  useEffect(() => { localStorage.setItem(K.transactions,   JSON.stringify(transactions));   }, [transactions,   K.transactions]);
-  useEffect(() => { localStorage.setItem(K.movements,      JSON.stringify(movements));       }, [movements,      K.movements]);
-  useEffect(() => { localStorage.setItem(K.debts,          JSON.stringify(debts));           }, [debts,          K.debts]);
-  useEffect(() => { localStorage.setItem(K.vatInvoices,    JSON.stringify(vatInvoices));     }, [vatInvoices,    K.vatInvoices]);
-  useEffect(() => { localStorage.setItem(K.invoices,       JSON.stringify(invoices));        }, [invoices,       K.invoices]);
-  useEffect(() => { localStorage.setItem(K.acts,           JSON.stringify(acts));            }, [acts,           K.acts]);
-  useEffect(() => { localStorage.setItem(K.payments,       JSON.stringify(payments));        }, [payments,       K.payments]);
-  useEffect(() => { localStorage.setItem(K.employees,      JSON.stringify(employees));       }, [employees,      K.employees]);
-  useEffect(() => { localStorage.setItem(K.payrollRecords, JSON.stringify(payrollRecords));  }, [payrollRecords, K.payrollRecords]);
-  useEffect(() => { localStorage.setItem(K.leaveRecords,   JSON.stringify(leaveRecords));    }, [leaveRecords,   K.leaveRecords]);
-  useEffect(() => { localStorage.setItem(K.clients,        JSON.stringify(clients));          }, [clients,        K.clients]);
-  useEffect(() => { localStorage.setItem(K.products,       JSON.stringify(products));         }, [products,       K.products]);
-  useEffect(() => { localStorage.setItem(K.trash,          JSON.stringify(trash));           }, [trash,          K.trash]);
+  // ─── Фабрики CRUD ────────────────────────────────────────────
+  const mk = useCallback((extra = {}) => ({
+    id: newId(), fopId, createdAt: new Date().toISOString(), ...extra,
+  }), [fopId]);
 
-  // ─── Журнал (транзакції) ─────────────────────────────────────────
+  const stripMeta = ({ id, fopId: _f, createdAt: _c, ...clean }) => clean;
+
+  // ─── Транзакції ──────────────────────────────────────────────
   const addTransaction = useCallback((t) => {
-    const item = { ...t, id: t.id || mkId() };
-    setTransactions(prev => [...prev, item]);
+    const item = { ...mk(), ...t, id: newId(), fopId };
+    setTransactions(p => [...p, item]);
+    dbInsert('transactions', item);
     return item;
+  }, [fopId, mk]);
+
+  const updateTransaction = useCallback((id, patch) => {
+    setTransactions(p => p.map(t => t.id === id ? { ...t, ...patch } : t));
+    dbUpdate('transactions', id, stripMeta(patch));
   }, []);
 
   const deleteTransaction = useCallback((id) => {
     setTransactions(prev => {
       const item = prev.find(t => t.id === id);
-      if (item) setTrash(tr => [...tr, { id: `tx_${id}`, kind: 'transaction', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const trashItem = { id: newId(), fopId, kind: 'transaction', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, trashItem]);
+        dbInsert('trash', trashToRow(trashItem));
+      }
       return prev.filter(t => t.id !== id);
     });
-  }, []);
+    dbDelete('transactions', id);
+  }, [fopId]);
 
-  // ─── Склад ──────────────────────────────────────────────────────
+  // ─── Склад ───────────────────────────────────────────────────
   const addMovement = useCallback((m) => {
-    setMovements(prev => [...prev, { ...m, id: mkId() }]);
-  }, []);
+    const item = { ...mk(), ...m, id: newId(), fopId };
+    setMovements(p => [...p, item]);
+    dbInsert('movements', item);
+    return item;
+  }, [fopId, mk]);
 
   const deleteMovement = useCallback((id) => {
     setMovements(prev => {
       const item = prev.find(m => m.id === id);
-      if (item) setTrash(tr => [...tr, { id: `mv_${id}`, kind: 'movement', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'movement', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(m => m.id !== id);
     });
-  }, []);
+    dbDelete('movements', id);
+  }, [fopId]);
 
-  // ─── Дебітори / Кредитори (ручні) ───────────────────────────────
+  // ─── Борги ───────────────────────────────────────────────────
   const addDebt = useCallback((d) => {
-    setDebts(prev => [...prev, { ...d, id: mkId() }]);
-  }, []);
+    const item = { ...mk(), ...d, id: newId(), fopId };
+    setDebts(p => [...p, item]); dbInsert('debts', item);
+    return item;
+  }, [fopId, mk]);
 
   const updateDebt = useCallback((id, patch) => {
-    setDebts(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
+    setDebts(p => p.map(d => d.id === id ? { ...d, ...patch } : d));
+    dbUpdate('debts', id, stripMeta(patch));
   }, []);
 
   const deleteDebt = useCallback((id) => {
     setDebts(prev => {
       const item = prev.find(d => d.id === id);
-      if (item) setTrash(tr => [...tr, { id: `debt_${id}`, kind: 'debt', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'debt', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(d => d.id !== id);
     });
-  }, []);
+    dbDelete('debts', id);
+  }, [fopId]);
 
-  // ─── ПДВ накладні ───────────────────────────────────────────────
-  const addVatInvoice    = useCallback((v) => {
-    const item = { ...v, id: mkId() };
-    setVatInvoices(prev => [...prev, item]);
+  // ─── ПН ──────────────────────────────────────────────────────
+  const addVatInvoice = useCallback((v) => {
+    const item = { ...mk(), ...v, id: newId(), fopId };
+    setVatInvoices(p => [...p, item]); dbInsert('vat_invoices', item);
     return item;
-  }, []);
+  }, [fopId, mk]);
+
   const deleteVatInvoice = useCallback((id) => {
     setVatInvoices(prev => {
       const item = prev.find(v => v.id === id);
-      if (item) setTrash(tr => [...tr, { id: `vat_${id}`, kind: 'vatInvoice', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'vatInvoice', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(v => v.id !== id);
     });
-  }, []);
+    dbDelete('vat_invoices', id);
+  }, [fopId]);
 
-  // ─── Рахунки (документообіг) ────────────────────────────────────
+  // ─── Рахунки ─────────────────────────────────────────────────
   const addInvoice = useCallback((inv) => {
-    const item = { ...inv, id: mkId(), createdAt: new Date().toISOString() };
-    setInvoices(prev => [...prev, item]);
+    const item = { ...mk(), ...inv, id: newId(), fopId };
+    setInvoices(p => [...p, item]); dbInsert('invoices', item);
     return item;
-  }, []);
+  }, [fopId, mk]);
 
   const updateInvoice = useCallback((id, patch) => {
-    setInvoices(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    setInvoices(p => p.map(i => i.id === id ? { ...i, ...patch } : i));
+    dbUpdate('invoices', id, stripMeta(patch));
   }, []);
 
   const deleteInvoice = useCallback((id) => {
     setInvoices(prev => {
       const item = prev.find(i => i.id === id);
-      if (item) setTrash(tr => [...tr, { id: `inv_${id}`, kind: 'invoice', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'invoice', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(i => i.id !== id);
     });
-  }, []);
+    // каскад у базі приберe acts/payments; чистимо і локально
+    setActs(p => p.filter(a => a.invoiceId !== id));
+    setPayments(p => p.filter(pm => pm.invoiceId !== id));
+    dbDelete('invoices', id);
+  }, [fopId]);
 
-  // ─── Акти / Накладні ────────────────────────────────────────────
+  // ─── Акти ────────────────────────────────────────────────────
   const addAct = useCallback((act) => {
-    const item = { ...act, id: mkId(), createdAt: new Date().toISOString() };
-    setActs(prev => [...prev, item]);
+    const item = { ...mk(), ...act, id: newId(), fopId };
+    setActs(p => [...p, item]); dbInsert('acts', actToRow(item));
     return item;
-  }, []);
+  }, [fopId, mk]);
 
   const updateAct = useCallback((id, patch) => {
-    setActs(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+    setActs(p => p.map(a => a.id === id ? { ...a, ...patch } : a));
+    dbUpdate('acts', id, actToRow({ ...stripMeta(patch), type: patch.type }));
   }, []);
 
   const deleteAct = useCallback((id) => {
     setActs(prev => {
       const item = prev.find(a => a.id === id);
-      if (item) setTrash(tr => [...tr, { id: `act_${id}`, kind: 'act', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'act', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(a => a.id !== id);
     });
-  }, []);
+    dbDelete('acts', id);
+  }, [fopId]);
 
-  // ─── Платежі по рахунках ────────────────────────────────────────
-  // При додаванні платежу автоматично створюємо запис у журналі
-  // та оновлюємо статус рахунку.
+  // ─── Оплати (+ авто-транзакція) ─────────────────────────────
   const addPayment = useCallback((payment, { invoice } = {}) => {
-    const item = { ...payment, id: mkId(), createdAt: new Date().toISOString() };
-    setPayments(prev => [...prev, item]);
+    const item = { ...mk(), ...payment, id: newId(), fopId };
+    setPayments(p => [...p, item]);
+    dbInsert('payments', item);
 
-    // Авто-транзакція в журналі
     const transType = payment.direction === 'outgoing' ? 'income' : 'expense';
     const txDesc = invoice
       ? `Оплата по рах. №${invoice.number}${invoice.clientName ? ' від ' + invoice.clientName : ''}`
       : (payment.notes || 'Оплата по рахунку');
 
     addTransaction({
-      date:             payment.date,
-      type:             transType,
-      counterparty:     invoice?.clientName || payment.counterparty || '',
-      amount:           +payment.amount || 0,
-      description:      txDesc,
-      invoicePaymentId: item.id, // маркер: ця транзакція від оплати рахунку
+      date: payment.date, type: transType,
+      counterparty: invoice?.clientName || payment.counterparty || '',
+      amount: +payment.amount || 0,
+      description: txDesc,
+      invoicePaymentId: item.id,
     });
 
-    // Якщо еквайринг — окремий запис комісії як витрата
     const comm = +payment.acquiringCommission || 0;
     if (comm > 0) {
       addTransaction({
-        date:        payment.date,
-        type:        'expense',
-        counterparty:'Банк (еквайринг)',
-        amount:      comm,
-        description: `Комісія еквайрингу по рах. №${invoice?.number || ''}`,
+        date: payment.date, type: 'expense', counterparty: 'Банк (еквайринг)',
+        amount: comm, description: `Комісія еквайрингу по рах. №${invoice?.number || ''}`,
         invoicePaymentId: item.id,
       });
     }
-
     return item;
-  }, [addTransaction]);
+  }, [fopId, mk, addTransaction]);
 
   const deletePayment = useCallback((id) => {
     setPayments(prev => {
       const item = prev.find(p => p.id === id);
-      if (item) setTrash(tr => [...tr, { id: `pay_${id}`, kind: 'payment', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'payment', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(p => p.id !== id);
     });
-    // Видаляємо пов'язані авто-транзакції
-    setTransactions(prev => prev.filter(t => t.invoicePaymentId !== id));
-  }, []);
+    setTransactions(prev => {
+      prev.filter(t => t.invoicePaymentId === id).forEach(t => dbDelete('transactions', t.id));
+      return prev.filter(t => t.invoicePaymentId !== id);
+    });
+    dbDelete('payments', id);
+  }, [fopId]);
 
-  // ─── Працівники ─────────────────────────────────────────────────
+  // ─── Працівники ──────────────────────────────────────────────
   const addEmployee = useCallback((emp) => {
-    const item = { ...emp, id: mkId(), createdAt: new Date().toISOString() };
-    setEmployees(prev => [...prev, item]);
+    const item = { ...mk(), ...emp, id: newId(), fopId };
+    setEmployees(p => [...p, item]); dbInsert('employees', item);
     return item;
-  }, []);
+  }, [fopId, mk]);
 
   const updateEmployee = useCallback((id, patch) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+    setEmployees(p => p.map(e => e.id === id ? { ...e, ...patch } : e));
+    dbUpdate('employees', id, stripMeta(patch));
   }, []);
 
   const deleteEmployee = useCallback((id) => {
     setEmployees(prev => {
       const item = prev.find(e => e.id === id);
-      if (item) setTrash(tr => [...tr, { id: `emp_${id}`, kind: 'employee', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'employee', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(e => e.id !== id);
     });
-  }, []);
+    dbDelete('employees', id);
+  }, [fopId]);
 
-  // ─── Нарахування зарплати ───────────────────────────────────────
+  // ─── Зарплата ────────────────────────────────────────────────
   const addPayrollRecord = useCallback((record) => {
-    const item = { ...record, id: mkId(), createdAt: new Date().toISOString() };
-    setPayrollRecords(prev => [...prev, item]);
+    const item = { ...mk(), ...record, id: newId(), fopId };
+    setPayrollRecords(p => [...p, item]);
+    dbInsert('payroll_records', payrollToRow(item));
     return item;
-  }, []);
+  }, [fopId, mk]);
 
   const updatePayrollRecord = useCallback((id, patch) => {
-    setPayrollRecords(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+    setPayrollRecords(p => p.map(r => {
+      if (r.id !== id) return r;
+      const merged = { ...r, ...patch };
+      const { id: _i, fopId: _f, employeeId, period, status, createdAt: _c, ...rest } = merged;
+      dbUpdate('payroll_records', id, { employeeId, period, status, data: rest });
+      return merged;
+    }));
   }, []);
 
   const deletePayrollRecord = useCallback((id) => {
     setPayrollRecords(prev => {
       const item = prev.find(r => r.id === id);
-      if (item) setTrash(tr => [...tr, { id: `pr_${id}`, kind: 'payrollRecord', data: item, deletedAt: new Date().toISOString() }]);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'payrollRecord', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
       return prev.filter(r => r.id !== id);
     });
-    // Видаляємо авто-транзакції пов'язані з цим нарахуванням
-    setTransactions(prev => prev.filter(t => t.payrollRecordId !== id));
-  }, []);
+    dbDelete('payroll_records', id);
+  }, [fopId]);
 
-  // Затвердити та виплатити — автоматично створює транзакції в журналі
   const approveAndPayPayroll = useCallback((recordId, paidDate) => {
     setPayrollRecords(prev => prev.map(r => {
       if (r.id !== recordId) return r;
-      const emp = employees.find(e => e.id === r.employeeId);
+      const emp  = employees.find(e => e.id === r.employeeId);
       const name = emp?.fullName || 'Працівник';
       const period = r.period || '';
 
-      // Виплата зарплати
       addTransaction({
-        date:            paidDate,
-        type:            'expense',
-        counterparty:    name,
-        amount:          +r.netPay || 0,
-        description:     `Виплата з/п ${name} за ${period}`,
+        date: paidDate, type: 'expense', counterparty: name,
+        amount: +r.netPay || 0, description: `Виплата з/п ${name} за ${period}`,
         payrollRecordId: r.id,
       });
-      // ПДФО до бюджету
       if ((+r.pdfo||0) > 0) addTransaction({
         date: paidDate, type: 'expense', counterparty: 'ДПС (ПДФО)',
         amount: +r.pdfo, description: `ПДФО з/п ${name} ${period}`, payrollRecordId: r.id,
       });
-      // ВЗ до бюджету
       if ((+r.vz||0) > 0) addTransaction({
         date: paidDate, type: 'expense', counterparty: 'ДПС (ВЗ)',
         amount: +r.vz, description: `ВЗ з/п ${name} ${period}`, payrollRecordId: r.id,
       });
-      // ЄСВ до бюджету
       if ((+r.esv||0) > 0) addTransaction({
         date: paidDate, type: 'expense', counterparty: 'ПФУ (ЄСВ)',
         amount: +r.esv, description: `ЄСВ з/п ${name} ${period}`, payrollRecordId: r.id,
       });
 
-      return { ...r, status: 'paid', paidDate };
+      const merged = { ...r, status: 'paid', paidDate };
+      const { id: _i, fopId: _f, employeeId, period: pd, status, createdAt: _c, ...rest } = merged;
+      dbUpdate('payroll_records', r.id, { employeeId, period: pd, status, data: rest });
+      return merged;
     }));
   }, [employees, addTransaction]);
 
-  // ─── Відпустки ──────────────────────────────────────────────────
+  // ─── Відпустки ──────────────────────────────────────────────
   const addLeaveRecord = useCallback((leave) => {
-    const item = { ...leave, id: mkId(), createdAt: new Date().toISOString() };
-    setLeaveRecords(prev => [...prev, item]);
-    // Тільки щорічна відпустка зменшує залишок. Відпустка за власний рахунок (unpaid),
-    // лікарняний і компенсація — не списуються з балансу щорічної відпустки.
-    const affectsAnnualBalance = leave.type === 'annual' && leave.days > 0;
-    if (affectsAnnualBalance) {
-      setEmployees(prev => prev.map(e =>
-        e.id === leave.employeeId
-          ? { ...e, leaveUsed: round2((+e.leaveUsed||0) + (+leave.days||0)) }
-          : e
-      ));
+    const item = { ...mk(), ...leave, id: newId(), fopId };
+    setLeaveRecords(p => [...p, item]); dbInsert('leave_records', item);
+    // списання днів з балансу працівника
+    if (leave.employeeId && +leave.days > 0 && (leave.type === 'annual' || leave.leaveType === 'annual')) {
+      setEmployees(prev => prev.map(e => {
+        if (e.id !== leave.employeeId) return e;
+        const used = round2((+e.leaveUsed || 0) + (+leave.days || 0));
+        dbUpdate('employees', e.id, { leaveUsed: used });
+        return { ...e, leaveUsed: used };
+      }));
     }
     return item;
-  }, []);
+  }, [fopId, mk]);
 
   const deleteLeaveRecord = useCallback((id) => {
     setLeaveRecords(prev => {
-      const item = prev.find(r => r.id === id);
-      // При видаленні щорічної відпустки — повертаємо дні в баланс
-      if (item && item.type === 'annual' && item.days > 0) {
-        setEmployees(emp => emp.map(e =>
-          e.id === item.employeeId
-            ? { ...e, leaveUsed: Math.max(0, round2((+e.leaveUsed||0) - (+item.days||0))) }
-            : e
-        ));
+      const item = prev.find(l => l.id === id);
+      if (item && item.employeeId && (item.type === 'annual' || item.leaveType === 'annual')) {
+        setEmployees(pe => pe.map(e => {
+          if (e.id !== item.employeeId) return e;
+          const used = Math.max(0, round2((+e.leaveUsed || 0) - (+item.days || 0)));
+          dbUpdate('employees', e.id, { leaveUsed: used });
+          return { ...e, leaveUsed: used };
+        }));
       }
-      return prev.filter(r => r.id !== id);
+      return prev.filter(l => l.id !== id);
     });
+    dbDelete('leave_records', id);
   }, []);
 
-  // ─── Довідник контрагентів ──────────────────────────────────────
-  const addClient    = useCallback((c) => { const item = {...c, id:mkId(), createdAt:new Date().toISOString()}; setClients(p=>[...p,item]); return item; }, []);
-  const updateClient = useCallback((id, patch) => setClients(p=>p.map(c=>c.id===id?{...c,...patch}:c)), []);
-  const deleteClient = useCallback((id) => setClients(p=>p.filter(c=>c.id!==id)), []);
+  // ─── Кадрові накази (Фаза 6) ────────────────────────────────
+  const addHrOrder = useCallback((o) => {
+    const item = { ...mk(), ...o, id: newId(), fopId };
+    setHrOrders(p => [...p, item]); dbInsert('hr_orders', item);
+    return item;
+  }, [fopId, mk]);
 
-  // ─── Довідник номенклатури ──────────────────────────────────────
-  const addProduct    = useCallback((pr) => { const item = {...pr, id:mkId(), createdAt:new Date().toISOString()}; setProducts(p=>[...p,item]); return item; }, []);
-  const updateProduct = useCallback((id, patch) => setProducts(p=>p.map(pr=>pr.id===id?{...pr,...patch}:pr)), []);
-  const deleteProduct = useCallback((id) => setProducts(p=>p.filter(pr=>pr.id!==id)), []);
+  const deleteHrOrder = useCallback((id) => {
+    setHrOrders(p => p.filter(o => o.id !== id));
+    dbDelete('hr_orders', id);
+  }, []);
 
-  // ─── Кошик (оновлений) ──────────────────────────────────────────
+  // ─── Довідники ──────────────────────────────────────────────
+  const addClient = useCallback((c) => {
+    const item = { ...mk(), ...c, id: newId(), fopId };
+    setClients(p => [...p, item]); dbInsert('clients', item);
+    return item;
+  }, [fopId, mk]);
+
+  const updateClient = useCallback((id, patch) => {
+    setClients(p => p.map(c => c.id === id ? { ...c, ...patch } : c));
+    dbUpdate('clients', id, stripMeta(patch));
+  }, []);
+
+  const deleteClient = useCallback((id) => {
+    setClients(p => p.filter(c => c.id !== id));
+    dbDelete('clients', id);
+  }, []);
+
+  const addProduct = useCallback((pr) => {
+    const item = { ...mk(), ...pr, id: newId(), fopId };
+    setProducts(p => [...p, item]); dbInsert('products', item);
+    return item;
+  }, [fopId, mk]);
+
+  const updateProduct = useCallback((id, patch) => {
+    setProducts(p => p.map(x => x.id === id ? { ...x, ...patch } : x));
+    dbUpdate('products', id, stripMeta(patch));
+  }, []);
+
+  const deleteProduct = useCallback((id) => {
+    setProducts(p => p.filter(x => x.id !== id));
+    dbDelete('products', id);
+  }, []);
+
+  // ─── Кошик ──────────────────────────────────────────────────
   const restoreFromTrash = useCallback((trashId) => {
     setTrash(prev => {
       const item = prev.find(t => t.id === trashId);
       if (!item) return prev;
-      if (item.kind === 'transaction')    setTransactions(p => [...p, item.data]);
-      if (item.kind === 'movement')       setMovements(p => [...p, item.data]);
-      if (item.kind === 'debt')           setDebts(p => [...p, item.data]);
-      if (item.kind === 'vatInvoice')     setVatInvoices(p => [...p, item.data]);
-      if (item.kind === 'invoice')        setInvoices(p => [...p, item.data]);
-      if (item.kind === 'act')            setActs(p => [...p, item.data]);
-      if (item.kind === 'payment')        setPayments(p => [...p, item.data]);
-      if (item.kind === 'employee')       setEmployees(p => [...p, item.data]);
-      if (item.kind === 'payrollRecord')  setPayrollRecords(p => [...p, item.data]);
+      const d = item.data;
+      const reinsert = (setter, table, row) => { setter(p => [...p, d]); dbInsert(table, row || d); };
+      if (item.kind === 'transaction')   reinsert(setTransactions, 'transactions');
+      if (item.kind === 'movement')      reinsert(setMovements, 'movements');
+      if (item.kind === 'debt')          reinsert(setDebts, 'debts');
+      if (item.kind === 'vatInvoice')    reinsert(setVatInvoices, 'vat_invoices');
+      if (item.kind === 'invoice')       reinsert(setInvoices, 'invoices');
+      if (item.kind === 'act')           reinsert(setActs, 'acts', actToRow(d));
+      if (item.kind === 'payment')       reinsert(setPayments, 'payments');
+      if (item.kind === 'employee')      reinsert(setEmployees, 'employees');
+      if (item.kind === 'payrollRecord') reinsert(setPayrollRecords, 'payroll_records', payrollToRow(d));
+      dbDelete('trash', trashId);
       return prev.filter(t => t.id !== trashId);
     });
   }, []);
 
-  const purgeFromTrash  = useCallback((id) => setTrash(prev => prev.filter(t => t.id !== id)), []);
-  const purgeAllTrash   = useCallback(() => setTrash([]), []);
+  const purgeFromTrash = useCallback((id) => {
+    setTrash(prev => prev.filter(t => t.id !== id));
+    dbDelete('trash', id);
+  }, []);
 
-  // ─── Резервна копія ─────────────────────────────────────────────
+  const purgeAllTrash = useCallback(() => {
+    setTrash(prev => { prev.forEach(t => dbDelete('trash', t.id)); return []; });
+  }, []);
+
+  // ─── Резервна копія (експорт JSON — додатковий захист) ─────
   const exportBackup = useCallback(() => ({
-    version: 4,
-    exportedAt: new Date().toISOString(),
-    transactions, movements, debts, vatInvoices,
-    invoices, acts, payments,
-    employees, payrollRecords, leaveRecords,
-    clients, products,
-    trash,
+    version: 5, exportedAt: new Date().toISOString(),
+    transactions, movements, debts, vatInvoices, invoices, acts, payments,
+    employees, payrollRecords, leaveRecords, hrOrders, clients, products, trash,
   }), [transactions, movements, debts, vatInvoices, invoices, acts, payments,
-       employees, payrollRecords, leaveRecords, clients, products, trash]);
+       employees, payrollRecords, leaveRecords, hrOrders, clients, products, trash]);
 
   const importBackup = useCallback((backup) => {
     if (!backup || typeof backup !== 'object') return { ok: false, error: 'Некоректний файл' };
-    setTransactions(  Array.isArray(backup.transactions)   ? backup.transactions   : []);
-    setMovements(     Array.isArray(backup.movements)       ? backup.movements       : []);
-    setDebts(         Array.isArray(backup.debts)           ? backup.debts           : []);
-    setVatInvoices(   Array.isArray(backup.vatInvoices)     ? backup.vatInvoices     : []);
-    setInvoices(      Array.isArray(backup.invoices)        ? backup.invoices        : []);
-    setActs(          Array.isArray(backup.acts)            ? backup.acts            : []);
-    setPayments(      Array.isArray(backup.payments)        ? backup.payments        : []);
-    setEmployees(     Array.isArray(backup.employees)       ? backup.employees       : []);
-    setPayrollRecords(Array.isArray(backup.payrollRecords)  ? backup.payrollRecords  : []);
-    setLeaveRecords(  Array.isArray(backup.leaveRecords)    ? backup.leaveRecords    : []);
-    setClients(       Array.isArray(backup.clients)         ? backup.clients         : []);
-    setProducts(      Array.isArray(backup.products)        ? backup.products        : []);
-    setTrash(         Array.isArray(backup.trash)           ? backup.trash           : []);
+    // Вставка кожного запису в базу з новими UUID + ремап зв'язків
+    const remapInv = {}, remapEmp = {}, remapPay = {};
+    const ins = (arr, table, prep = x => x, remap) => (Array.isArray(arr) ? arr : []).map(src => {
+      const oldId = src.id;
+      const item = { ...src, id: newId(), fopId };
+      if (remap && oldId) remap[oldId] = item.id;
+      dbInsert(table, prep(item));
+      return item;
+    });
+
+    const inv = ins(backup.invoices, 'invoices', x => x, remapInv);
+    const emp = ins(backup.employees, 'employees', x => x, remapEmp);
+    const tx  = ins((backup.transactions||[]).map(t => ({ ...t, invoicePaymentId: null })), 'transactions');
+    const ac  = ins((backup.acts||[]).map(a => ({ ...a, invoiceId: remapInv[a.invoiceId] || null })), 'acts', actToRow);
+    const pay = ins((backup.payments||[]).map(p => ({ ...p, invoiceId: remapInv[p.invoiceId] || null })), 'payments', x => x, remapPay);
+    const pr  = ins((backup.payrollRecords||[]).map(r => ({ ...r, employeeId: remapEmp[r.employeeId] || null })), 'payroll_records', payrollToRow);
+    const lv  = ins((backup.leaveRecords||[]).map(l => ({ ...l, employeeId: remapEmp[l.employeeId] || null })), 'leave_records');
+    const mv  = ins(backup.movements, 'movements');
+    const db_ = ins(backup.debts, 'debts');
+    const vat = ins(backup.vatInvoices, 'vat_invoices');
+    const cl  = ins(backup.clients, 'clients');
+    const prod= ins(backup.products, 'products');
+
+    setInvoices(p => [...p, ...inv]);   setEmployees(p => [...p, ...emp]);
+    setTransactions(p => [...p, ...tx]); setActs(p => [...p, ...ac]);
+    setPayments(p => [...p, ...pay]);    setPayrollRecords(p => [...p, ...pr]);
+    setLeaveRecords(p => [...p, ...lv]); setMovements(p => [...p, ...mv]);
+    setDebts(p => [...p, ...db_]);       setVatInvoices(p => [...p, ...vat]);
+    setClients(p => [...p, ...cl]);      setProducts(p => [...p, ...prod]);
     return { ok: true };
-  }, []);
+  }, [fopId]);
+
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'60vh',
+                  fontFamily:'system-ui', color:'#4a6b62' }}>
+      Завантаження даних ФОП…
+    </div>
+  );
 
   return (
     <DataContext.Provider value={{
-      transactions,  addTransaction,    deleteTransaction,
+      transactions,  addTransaction, updateTransaction, deleteTransaction,
       movements,     addMovement,       deleteMovement,
       debts,         addDebt,   updateDebt,   deleteDebt,
       vatInvoices,   addVatInvoice,     deleteVatInvoice,
@@ -384,6 +528,7 @@ export const DataProvider = ({ fopId, children }) => {
       employees,     addEmployee, updateEmployee, deleteEmployee,
       payrollRecords, addPayrollRecord, updatePayrollRecord, deletePayrollRecord, approveAndPayPayroll,
       leaveRecords,  addLeaveRecord,    deleteLeaveRecord,
+      hrOrders,      addHrOrder,        deleteHrOrder,
       clients,       addClient,   updateClient,   deleteClient,
       products,      addProduct,  updateProduct,  deleteProduct,
       trash,         restoreFromTrash,  purgeFromTrash, purgeAllTrash,

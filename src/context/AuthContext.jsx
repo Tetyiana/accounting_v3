@@ -1,75 +1,75 @@
-import React, { createContext, useContext, useState } from 'react';
-import { hashPassword, verifyPassword } from '../utils/crypto';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
-// AuthContext відповідає лише за обліковий запис (логін/реєстрація/вихід).
-// Дані ФОП (реквізити, налаштування) — у FopContext.
+// Автентифікація через Supabase Auth (email + пароль).
+// user: { id, email, name } — name зберігається в user_metadata.
 
 const AuthContext = createContext();
 
-const USERS_KEY   = 'fop_users';
-const CURRENT_KEY = 'fop_current';
-
-const getUsers = () => {
-  try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); }
-  catch { return []; }
-};
+const toSafeUser = (sbUser) => sbUser ? {
+  id:    sbUser.id,
+  email: sbUser.email,
+  name:  sbUser.user_metadata?.name || sbUser.email,
+} : null;
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(CURRENT_KEY) || 'null'); }
-    catch { return null; }
-  });
+  const [user, setUser]       = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Реєстрація: тільки ім'я + email + пароль. ФОП додається окремо.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(toSafeUser(session?.user));
+      setLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(toSafeUser(session?.user));
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const register = async ({ name, email, password }) => {
-    const users = getUsers();
-    if (users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
-      return { ok: false, error: 'Цей email вже зареєстровано' };
-    }
-    const id           = Date.now().toString();
-    const passwordHash = await hashPassword(password);
-    const newUser      = { id, name, email: email.toLowerCase(), passwordHash };
-    localStorage.setItem(USERS_KEY, JSON.stringify([...users, newUser]));
-    const safe = { id, name, email: newUser.email };
-    localStorage.setItem(CURRENT_KEY, JSON.stringify(safe));
-    setUser(safe);
+    const { data, error } = await supabase.auth.signUp({
+      email, password, options: { data: { name } },
+    });
+    if (error) return { ok: false, error: translateAuthError(error.message) };
+    // Якщо email-підтвердження вимкнено — сесія є одразу
+    if (data.session) setUser(toSafeUser(data.user));
+    else return { ok: true, needConfirm: true };
     return { ok: true };
   };
 
   const login = async (email, password) => {
-    const found = getUsers().find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!found) return { ok: false, error: 'Невірний email або пароль' };
-
-    const valid = found.passwordHash
-      ? await verifyPassword(password, found.passwordHash)
-      : found.password === password;
-    if (!valid) return { ok: false, error: 'Невірний email або пароль' };
-
-    // Тиха міграція зі старої схеми (відкритий пароль → хеш).
-    if (!found.passwordHash) {
-      const passwordHash = await hashPassword(password);
-      const migrated = getUsers().map(u =>
-        u.id === found.id ? { ...u, passwordHash, password: undefined } : u
-      );
-      localStorage.setItem(USERS_KEY, JSON.stringify(migrated));
-    }
-
-    const { password: _p, passwordHash: _h, ...safe } = found;
-    localStorage.setItem(CURRENT_KEY, JSON.stringify(safe));
-    setUser(safe);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { ok: false, error: translateAuthError(error.message) };
+    setUser(toSafeUser(data.user));
     return { ok: true };
   };
 
-  const logout = () => {
-    localStorage.removeItem(CURRENT_KEY);
+  const logout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
   };
+
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh',
+                  fontFamily:'system-ui', color:'#4a6b62' }}>
+      Завантаження…
+    </div>
+  );
 
   return (
     <AuthContext.Provider value={{ user, register, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
+};
+
+const translateAuthError = (msg) => {
+  if (/invalid login credentials/i.test(msg)) return 'Невірний email або пароль';
+  if (/already registered/i.test(msg))        return 'Цей email вже зареєстровано';
+  if (/at least 6 characters/i.test(msg))     return 'Пароль має бути щонайменше 6 символів';
+  if (/rate limit/i.test(msg))                return 'Забагато спроб — зачекайте хвилину';
+  return msg;
 };
 
 export const useAuth = () => useContext(AuthContext);

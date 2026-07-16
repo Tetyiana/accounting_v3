@@ -86,6 +86,26 @@ const SettingsView = () => {
         </div>
       </div>
 
+      {/* ─── Міграція старих даних ───────────────────────── */}
+      {findLocalFops().length > 0 && (
+        <div className="settings-section">
+          <h3>Перенесення даних з цього браузера</h3>
+          <p className="cell-muted" style={{fontSize:'.83rem', marginBottom:10}}>
+            Знайдено дані попередньої версії (localStorage): {findLocalFops().length} ФОП.
+            Перенести їх у хмарну базу під ваш обліковий запис? Після успішного
+            перенесення локальні дані можна очистити.
+          </p>
+          <button className="btn btn--primary" onClick={async () => {
+            if (!window.confirm('Перенести локальні дані у хмару? Дублікати не перевіряються — виконайте один раз.')) return;
+            setMsg('Перенесення…');
+            const res = await migrateLocalToSupabase(user.id);
+            if (res.ok) {
+              setMsg(`Перенесено: ${res.fops} ФОП, ${res.records} записів. Перезавантажте сторінку.`);
+            } else setMsg('Помилка: ' + res.error);
+          }}>⇪ Перенести дані у хмару</button>
+        </div>
+      )}
+
       {/* ─── Профіль ФОП ─────────────────────────────────── */}
       <div className="settings-section">
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
