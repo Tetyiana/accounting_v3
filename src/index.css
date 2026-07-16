@@ -1121,3 +1121,12 @@ body { font-size: 1rem; }
   .kdv-fop-info { font-size: .8rem; }
   .kdv-fop-info span { display: block; margin-left: 0 !important; margin-top: 4px; }
 }
+
+/* Баг 10: розгорнуті форми всередині таблиць (акт/оплата з рахунку)
+   на мобільному не мають успадковувати nowrap і min-width таблиці */
+@media (max-width: 767px) {
+  .data-table .inline-form,
+  .data-table .inline-form * { white-space: normal; }
+  .data-table td .inline-form { min-width: 0; max-width: calc(100vw - 48px); }
+  .data-table tr td[colspan] { white-space: normal; }
+}

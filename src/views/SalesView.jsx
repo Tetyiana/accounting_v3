@@ -633,7 +633,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
         <td onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', gap: 4 }}>
             <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>⇩ PDF</button>
-            <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>✎</button>
+            <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>ред.</button>
             <button className="btn btn--ghost btn--sm" title="Акт/Накладна" onClick={() => { setOpen(true); setAddAct(p=>!p); setAddPay(false); }}>
               + {inferDocType(inv.items) === 'act' ? 'Акт' : 'Накладна'}
             </button>
