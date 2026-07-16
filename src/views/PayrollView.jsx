@@ -17,6 +17,7 @@ import {
 import { generatePayrollXml, downloadXml } from '../utils/payrollXml';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
+import HrOrders from '../components/Payroll/HrOrders';
 
 // ─── Форма картки працівника ─────────────────────────────────────────
 const EmployeeForm = ({ initial, onSave, onCancel }) => {
@@ -605,6 +606,8 @@ const PayrollView = () => {
       )}
 
       {/* ─── НАРАХУВАННЯ ────────────────────────────────────────── */}
+      {tab === 'employees' && <HrOrders employees={employees} />}
+
       {tab === 'payroll' && (
         <div>
           <div style={{display:'flex', gap:10, alignItems:'flex-end', marginBottom:14, flexWrap:'wrap'}}>
