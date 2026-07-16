@@ -30,7 +30,12 @@ export const newId = () => crypto.randomUUID();
 // ─── Generic CRUD (fire-and-forget з логом помилок) ──────────
 export const dbInsert = (table, row) => {
   supabase.from(table).insert(toRow(row)).then(({ error }) => {
-    if (error) console.error(`[db] insert ${table}:`, error.message, row);
+    if (error) {
+      console.error(`[db] insert ${table}:`, error.message, row);
+      // Критично: збереження не відбулося — повідомляємо, інакше дані
+      // живуть лише до перезавантаження і «зникають» непомітно.
+      alert(`Не збережено в базу (${table}): ${error.message}`);
+    }
   });
 };
 
