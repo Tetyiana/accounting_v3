@@ -5,6 +5,7 @@ import { useFop } from '../context/FopContext';
 import { KDV_CONFIGS, QUARTER_LABEL, HALF_LABEL } from '../constants/kdvConfig';
 import { buildKdvEntries, fmtMoney } from '../utils/documentLogic';
 import { exportCSV } from '../utils/exportUtils';
+import { openPrintWindow } from '../utils/printWindow';
 
 const PERIODS = [
   { id: 'day',   label: 'По днях' },
@@ -134,6 +135,39 @@ const KdvView = () => {
     exportCSV(entries, cols, `КДВ_${selYear}${selMonth?'_'+selMonth:''}.csv`);
   };
 
+  // Формування друкованої книги (форма для подання/зберігання)
+  const handlePrint = () => {
+    const cols = config.columns;
+    const rowsHtml = entries.map(e => `<tr>${cols.map(c => {
+      const v = e[c.key];
+      const num = typeof v === 'number';
+      return `<td align="${c.align || (num ? 'right' : 'left')}">${num ? fmtMoney(v) : (v ?? '')}</td>`;
+    }).join('')}</tr>`).join('');
+    const totals = cols.map(c => {
+      if (c.key === 'num')  return '<td></td>';
+      if (c.key === 'date') return '<td><b>Разом</b></td>';
+      const sum = entries.reduce((s2, e) => typeof e[c.key] === 'number' ? s2 + e[c.key] : s2, 0);
+      return `<td align="right"><b>${sum ? fmtMoney(sum) : ''}</b></td>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
+<title>${config.title} ${selYear}</title>
+<style>body{font-family:Arial,sans-serif;font-size:11px;margin:24px;color:#111}
+h2{font-size:15px;text-align:center;margin:6px 0}.center{text-align:center}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+td,th{border:1px solid #333;padding:4px 6px}th{background:#f0f0f0}
+@media print{body{margin:10mm}}</style></head><body>
+<h2>${config.title}</h2>
+<p class="center">${config.subtitle || ''}</p>
+<p class="center">ФОП ${activeFop?.fullName || ''} · РНОКПП ${activeFop?.rnokpp || ''}<br>
+за ${selMonth ? MONTHS_UK[selMonth-1] + ' ' : ''}${selYear} р.</p>
+<table><thead><tr>${cols.map(c => `<th>${c.label}</th>`).join('')}</tr></thead>
+<tbody>${rowsHtml || `<tr><td colspan="${cols.length}" align="center">Записів немає</td></tr>`}</tbody>
+<tfoot><tr>${totals}</tr></tfoot></table>
+<p style="margin-top:24px">Підпис: ___________________ ФОП ${activeFop?.fullName || ''}</p>
+</body></html>`;
+    openPrintWindow(html);
+  };
+
   // ─── Рендер ────────────────────────────────────────────────────
   return (
     <div className="view-kdv">
@@ -143,6 +177,7 @@ const KdvView = () => {
           <div className="cell-muted" style={{ fontSize: '.8rem' }}>{config.subtitle}</div>
         </div>
         <div className="toolbar-actions">
+          <button className="btn btn--primary" onClick={handlePrint}>🖨 Сформувати книгу</button>
           <button className="btn btn--ghost" onClick={handleExportCsv}>⇩ CSV</button>
         </div>
       </div>
