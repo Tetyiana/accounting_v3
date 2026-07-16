@@ -33,11 +33,21 @@ const ReportsView = () => {
       .filter(t => t.type === 'expense' && BUDGET_RE.test(t.counterparty || ''))
       .reduce((s,t) => s + (+t.amount||0), 0);
 
+    // Зарплатні податки (ПДФО+ВЗ+ЄСВ) з нарахувань періоду — нараховані
+    // зобов'язання незалежно від сплати (сплата видна лише з банк/каса).
+    const pFrom = dateStart.slice(0,7), pTo = dateEnd.slice(0,7);
+    const payrollTax = (payrollRecords || [])
+      .filter(r => (r.status === 'approved' || r.status === 'paid') &&
+                   r.period >= pFrom && r.period <= pTo)
+      .reduce((s, r) => s + (+r.pdfo||0) + (+r.vz||0) + (+r.esv||0), 0);
+    const totalAccrued = calc.tax + payrollTax;
+
     return {
       income, expense, net: income - expense,
-      tax: calc.tax, breakdown: calc.breakdown, note: calc.note,
+      tax: totalAccrued, payrollTax, fopTax: calc.tax,
+      breakdown: calc.breakdown, note: calc.note,
       group: group?.label, count: inRange.length, rows: inRange,
-      paidToBudget, budgetBalance: calc.tax - paidToBudget,
+      paidToBudget, budgetBalance: totalAccrued - paidToBudget,
       ledgerEntries: buildLedgerEntries(inRange),
     };
   }, [generated, transactions, dateStart, dateEnd, settings]);
@@ -109,7 +119,7 @@ const ReportsView = () => {
             <div style={{fontWeight:600, marginBottom: 10}}>Стан розрахунків з бюджетом</div>
             <div className="stats-grid">
               <div className="stat-card">
-                <div className="stat-label">Нараховано за період</div>
+                <div className="stat-label">Нараховано за період{report.payrollTax > 0 ? ` (ФОП ${fmt(report.fopTax)} + з/п ${fmt(report.payrollTax)})` : ''}</div>
                 <div className="stat-value">{fmt(report.tax)}</div>
               </div>
               <div className="stat-card">

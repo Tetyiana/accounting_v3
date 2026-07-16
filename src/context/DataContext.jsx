@@ -335,22 +335,15 @@ export const DataProvider = ({ fopId, children }) => {
       const name = emp?.fullName || 'Працівник';
       const period = r.period || '';
 
+      // Фіксується ЛИШЕ факт виплати з/п працівнику (касовий метод).
+      // Податки (ПДФО/ВЗ/ЄСВ) — НЕ створюються автоматично: це нараховані
+      // зобов'язання, а сплата фіксується окремою операцією банк/каса
+      // (вручну чи з виписки, контрагент ДПС/ПФУ) — інакше стан
+      // розрахунків з бюджетом показував би фейкову сплату.
       addTransaction({
         date: paidDate, type: 'expense', counterparty: name,
         amount: +r.netPay || 0, description: `Виплата з/п ${name} за ${period}`,
         payrollRecordId: r.id,
-      });
-      if ((+r.pdfo||0) > 0) addTransaction({
-        date: paidDate, type: 'expense', counterparty: 'ДПС (ПДФО)',
-        amount: +r.pdfo, description: `ПДФО з/п ${name} ${period}`, payrollRecordId: r.id,
-      });
-      if ((+r.vz||0) > 0) addTransaction({
-        date: paidDate, type: 'expense', counterparty: 'ДПС (ВЗ)',
-        amount: +r.vz, description: `ВЗ з/п ${name} ${period}`, payrollRecordId: r.id,
-      });
-      if ((+r.esv||0) > 0) addTransaction({
-        date: paidDate, type: 'expense', counterparty: 'ПФУ (ЄСВ)',
-        amount: +r.esv, description: `ЄСВ з/п ${name} ${period}`, payrollRecordId: r.id,
       });
 
       const merged = { ...r, status: 'paid', paidDate };
