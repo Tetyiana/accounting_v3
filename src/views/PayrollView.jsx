@@ -114,7 +114,11 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || 100));
   const [leaveDays, setLeaveDays] = useState(String(existingRecord?.leaveDays || 0));
   const [compensationDays, setCompensationDays] = useState(String(existingRecord?.compensationDays || 0));
-  const [unpaidCalendarDays, setUnpaidCalendarDays] = useState(String(existingRecord?.unpaidCalendarDays || existingRecord?.unpaidDays || 0));
+  const [unpaidEndDate, setUnpaidEndDate] = useState(existingRecord?.unpaidEndDate || '');
+  // к.д. = включно з...до; порожні дати → 0
+  const unpaidCalendarDays = (unpaidStartDate && unpaidEndDate && unpaidEndDate >= unpaidStartDate)
+    ? Math.round((new Date(unpaidEndDate) - new Date(unpaidStartDate)) / 86400000) + 1
+    : 0;
   const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
   const workingDaysInMonth = calcWorkingDaysInMonth(period);
   const unpaidDays = calcWorkingDaysInRange(unpaidStartDate, +unpaidCalendarDays);
@@ -190,6 +194,8 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         unpaidDays:           ud,
         unpaidCalendarDays:   +unpaidCalendarDays || 0,
         unpaidStartDate:      unpaidStartDate,
+        unpaidEndDate:        unpaidEndDate,
+        unpaidCalendarDays:   unpaidCalendarDays,
         workingDaysInMonth:   wdim,
         unpaidDeductionAmount:unpaid2.deduction,
         otherAccruals:        other,
@@ -254,12 +260,12 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
           <input type="number" value={compensationDays} onChange={e => setCompensationDays(e.target.value)} min="0" />
         </div>
         <div className="field">
-          <label>Відпустка за вл. рах., дата початку</label>
+          <label>Відпустка за вл. рах.: з</label>
           <input type="date" value={unpaidStartDate} onChange={e => setUnpaidStartDate(e.target.value)} />
         </div>
         <div className="field">
-          <label>Відпустка за вл. рах. (к.д.)</label>
-          <input type="number" value={unpaidCalendarDays} onChange={e => setUnpaidCalendarDays(e.target.value)} min="0" />
+          <label>по (включно)</label>
+          <input type="date" value={unpaidEndDate} onChange={e => setUnpaidEndDate(e.target.value)} min={unpaidStartDate} />
         </div>
         {+unpaidCalendarDays > 0 && (
           <div className="field">

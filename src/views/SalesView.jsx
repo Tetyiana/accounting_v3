@@ -85,7 +85,7 @@ ${docHeaderHtml(activeFop, mainIban)}
   </tr>
 </table>
 <table>
-  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
+  <thead><tr><th>№</th><th>${isDeliveryNote ? 'Найменування товару' : 'Найменування робіт (послуг)'}</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
   <tbody>${itemRows}</tbody>
   <tfoot>
     ${settings.isVatPayer ? `
@@ -110,6 +110,7 @@ const buildActHtml = (act, activeFop, settings) => {
     : '';
   const totalsNow = calcDocTotals(act.items || []);
   const docLabel = ACT_TYPES.find(t => t.id === act.type)?.label || 'Акт';
+  const isDeliveryNote = act.type === 'delivery_note';
 
   const itemRows = (act.items || []).map((it, i) => {
     const { subtotal, vatAmount, total } = calcItemAmounts(it);
@@ -131,9 +132,22 @@ const buildActHtml = (act, activeFop, settings) => {
 ${docHeaderHtml(activeFop, mainIban)}
 <h2>${docLabel.toUpperCase()} № ${act.number||'—'}</h2>
 <p class="center">від ${act.date||''}</p>
+${isDeliveryNote ? `
+<table style="border:none;margin:8px 0">
+  <tr><td style="border:none;width:50%">
+    <b>Постачальник:</b> ФОП ${activeFop?.fullName||''}${activeFop?.rnokpp?`, РНОКПП ${activeFop.rnokpp}`:''}
+    ${activeFop?.legalAddress?`<br>${activeFop.legalAddress}`:''}
+  </td><td style="border:none">
+    <b>Одержувач:</b> ${act.clientName||'—'}${act.clientIpn?`, ЄДРПОУ/ІПН ${act.clientIpn}`:''}
+    ${act.clientAddress?`<br>${act.clientAddress}`:''}
+  </td></tr>
+</table>
+${act.invoiceNumber ? `<p>Підстава: рахунок №${act.invoiceNumber}</p>` : ''}
+` : `
 <p>Виконавець: <b>ФОП ${activeFop?.fullName||''}</b>${activeFop?.rnokpp?` (РНОКПП ${activeFop.rnokpp})`:''}, з однієї сторони, та
 Замовник: <b>${act.clientName||'—'}</b>${act.clientIpn?` (ЄДРПОУ/ІПН ${act.clientIpn})`:''}${act.clientAddress?`, ${act.clientAddress}`:''}, з іншої сторони,
 склали цей акт про те, що Виконавцем надано, а Замовником прийнято наступні роботи (послуги):</p>
+`}
 <table>
   <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
   <tbody>${itemRows}</tbody>
@@ -147,6 +161,19 @@ ${docHeaderHtml(activeFop, mainIban)}
     `}
   </tfoot>
 </table>
+${isDeliveryNote ? `
+<div class="sig">
+  <div>
+    <b>Відпустив:</b><br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>
+    ___________________________<br><small>(підпис)</small>
+  </div>
+  <div>
+    <b>Отримав:</b><br>${act.clientName||''}<br><br>
+    За довіреністю № _______ від _______________<br>
+    Посада: ___________________ ПІБ: ___________________<br>
+    ___________________________<br><small>(підпис)</small>
+  </div>
+` : `
 <p>Роботи (послуги) виконано в повному обсязі, у визначений термін. Замовник претензій щодо обсягу, якості та строків виконання робіт (надання послуг) не має.</p>
 <div class="sig">
   <div>
@@ -158,6 +185,7 @@ ${docHeaderHtml(activeFop, mainIban)}
     Посада: ___________________ ПІБ: ___________________<br>
     ___________________________<br><small>(підпис)</small>
   </div>
+`}
 </div>
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
