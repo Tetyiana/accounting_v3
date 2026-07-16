@@ -24,7 +24,7 @@ const AuthPage = () => {
   const { login, register } = useAuth();
   const [mode, setMode]     = useState('login');
   const [form, setForm]     = useState(INIT_LOGIN);
-  const [error, setError]   = useState('');
+  const [error, setError]   = useState(localStorage.getItem('last_login_email') || '');
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);

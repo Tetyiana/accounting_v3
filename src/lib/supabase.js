@@ -5,5 +5,11 @@ import { createClient } from '@supabase/supabase-js';
 const url = import.meta.env.VITE_SUPABASE_URL  || 'https://ggsaaymebyotodpjjukb.supabase.co';
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_h-f0UaUZVyXjeD9Rj2T7-w_B97wydX1';
 
-export const supabase = createClient(url, key);
+export const supabase = createClient(url, key, {
+  auth: {
+    persistSession: true,      // сесія в localStorage — вхід зберігається
+    autoRefreshToken: true,    // токен оновлюється сам, повторний логін не потрібен
+    detectSessionInUrl: true,
+  },
+});
 export const isSupabaseConfigured = true;
