@@ -13,6 +13,7 @@ import DirectoriesView from '../../views/DirectoriesView';
 import RegistryView from '../../views/RegistryView';
 import DpsView from '../../views/DpsView';
 import AccountingView from '../../views/AccountingView';
+import PricingView from '../../views/PricingView';
 import DocumentsView from '../../views/DocumentsView';
 import ReportsView   from '../../views/ReportsView';
 import VatView       from '../../views/VatView';
@@ -36,6 +37,7 @@ const TABS = [
   { id: 'reports',   label: 'Звіти',              icon: '▥', group: 'main' },
   { id: 'vat',       label: 'ПДВ',                icon: '%', group: 'main', setting: 'isVatPayer' },
   { id: 'rro',       label: 'РРО / Каса',         icon: '🖨', group: 'main', setting: 'useRRO' },
+  { id: 'pricing',     label: 'Тарифи',              icon: '💳', group: 'bottom' },
   { id: 'trash',     label: 'Кошик',              icon: '🗑', group: 'bottom' },
   { id: 'settings',  label: 'Налаштування',       icon: '⚙', group: 'bottom' },
 ];
