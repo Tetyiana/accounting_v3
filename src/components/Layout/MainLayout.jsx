@@ -14,6 +14,7 @@ import RegistryView from '../../views/RegistryView';
 import DpsView from '../../views/DpsView';
 import AccountingView from '../../views/AccountingView';
 import PricingView from '../../views/PricingView';
+import RroView from '../../views/RroView';
 import DocumentsView from '../../views/DocumentsView';
 import ReportsView   from '../../views/ReportsView';
 import VatView       from '../../views/VatView';
@@ -62,7 +63,7 @@ const VIEWS = {
   documents: ()     => <DocumentsView />,
   reports:   ()     => <ReportsView />,
   vat:       ()     => <VatView />,
-  rro:       ()     => <RroPlaceholder />,
+  rro:       ()     => <RroView />,
   trash:     ()     => <TrashView />,
   settings:  ()     => <SettingsView />,
 };
