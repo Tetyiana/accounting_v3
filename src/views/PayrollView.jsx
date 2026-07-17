@@ -469,10 +469,15 @@ const PayrollView = () => {
     setCalcEmp(null);
   };
 
-  const handleApprove = (record) => {
-    const d = window.prompt(`Дата виплати (РРРР-ММ-ДД):`, new Date().toISOString().slice(0,10));
+  const handlePayPart = (record, part) => {
+    const defAmount = part === 'advance'
+      ? Math.round((+record.netPay || 0) * 0.5 * 100) / 100
+      : Math.round(((+record.netPay || 0) - (+record.advanceAmount || 0)) * 100) / 100;
+    const d = window.prompt('Дата виплати (РРРР-ММ-ДД):', new Date().toISOString().slice(0,10));
     if (!d) return;
-    approveAndPayPayroll(record.id, d);
+    const a = window.prompt(part === 'advance' ? 'Сума авансу, грн:' : 'Сума до виплати, грн:', String(defAmount));
+    if (a === null) return;
+    approveAndPayPayroll(record.id, d, part, +a || defAmount);
   };
 
   // ─── XML звітність ────────────────────────────────────────────
@@ -665,7 +670,7 @@ const PayrollView = () => {
                           <td style={{textAlign:'right'}}>{fmtMoney(r.totalDeductions)}</td>
                           <td style={{textAlign:'right', fontWeight:700, color:'var(--success)'}}>{fmtMoney(r.netPay)}</td>
                           <td style={{textAlign:'right'}}>{fmtMoney(r.esv)}</td>
-                          <td><span className={`badge badge--${r.status==='paid'?'success':r.status==='approved'?'warning':'muted'}`}>{statusInfo?.label}</span></td>
+                          <td><span className={`badge badge--${r.status==='paid'?'success':r.status==='advance_paid'?'warning':r.status==='approved'?'warning':'muted'}`}>{statusInfo?.label}</span></td>
                           <td>
                             <div style={{display:'flex', gap:4}}>
                               {r.status === 'draft' && (
@@ -673,7 +678,10 @@ const PayrollView = () => {
                                   onClick={() => updatePayrollRecord(r.id, { status: 'approved' })}>Затвердити</button>
                               )}
                               {r.status === 'approved' && (
-                                <button className="btn btn--primary btn--sm" onClick={() => handleApprove(r)}>Виплатити</button>
+                                <button className="btn btn--ghost btn--sm" onClick={() => handlePayPart(r, 'advance')}>Аванс</button>
+                              )}
+                              {(r.status === 'approved' || r.status === 'advance_paid') && (
+                                <button className="btn btn--primary btn--sm" onClick={() => handlePayPart(r, 'final')}>Виплатити</button>
                               )}
                               <button className="btn btn--ghost btn--sm" onClick={() => printPayslip(r, emp, activeFop)}>🖨</button>
                               <button className="btn-icon btn-icon--del" onClick={() => window.confirm('Видалити нарахування?') && deletePayrollRecord(r.id)}>✕</button>
@@ -803,7 +811,7 @@ const PayrollView = () => {
                   const emp = employees.find(e => e.id === r.employeeId);
                   return (
                     <div key={r.id} style={{display:'flex', gap:8, alignItems:'center', marginTop:4}}>
-                      <span className={`badge badge--${r.status==='paid'?'success':r.status==='approved'?'warning':'muted'}`}>
+                      <span className={`badge badge--${r.status==='paid'?'success':r.status==='advance_paid'?'warning':r.status==='approved'?'warning':'muted'}`}>
                         {PAYROLL_STATUSES.find(s=>s.id===r.status)?.label}
                       </span>
                       <span>{emp?.fullName}</span>

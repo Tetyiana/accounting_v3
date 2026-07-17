@@ -36,6 +36,7 @@ export const LEAVE_TYPES = [
 export const PAYROLL_STATUSES = [
   { id: 'draft',    label: 'Чернетка'  },
   { id: 'approved', label: 'Затверджено' },
+  { id: 'advance_paid', label: 'Аванс виплачено' },
   { id: 'paid',     label: 'Виплачено'  },
 ];
 

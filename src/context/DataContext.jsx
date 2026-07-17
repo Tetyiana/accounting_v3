@@ -328,25 +328,38 @@ export const DataProvider = ({ fopId, children }) => {
     dbDelete('payroll_records', id);
   }, [fopId]);
 
-  const approveAndPayPayroll = useCallback((recordId, paidDate) => {
+  // Виплата зарплати частинами (КЗпП ст.115: не рідше 2 разів на місяць).
+  // part: 'advance' (аванс) | 'final' (остаточний розрахунок).
+  // Податки НЕ створюються автоматично — лише факт виплати працівнику;
+  // сплата ПДФО/ВЗ/ЄСВ фіксується реальною операцією банк/каса (ДПС/ПФУ).
+  const approveAndPayPayroll = useCallback((recordId, paidDate, part = 'final', amount = null) => {
     setPayrollRecords(prev => prev.map(r => {
       if (r.id !== recordId) return r;
       const emp  = employees.find(e => e.id === r.employeeId);
       const name = emp?.fullName || 'Працівник';
       const period = r.period || '';
+      const advancePaid = +r.advanceAmount || 0;
 
-      // Фіксується ЛИШЕ факт виплати з/п працівнику (касовий метод).
-      // Податки (ПДФО/ВЗ/ЄСВ) — НЕ створюються автоматично: це нараховані
-      // зобов'язання, а сплата фіксується окремою операцією банк/каса
-      // (вручну чи з виписки, контрагент ДПС/ПФУ) — інакше стан
-      // розрахунків з бюджетом показував би фейкову сплату.
+      const payAmount = amount !== null
+        ? round2(+amount)
+        : part === 'advance'
+          ? round2((+r.netPay || 0) * 0.5)                 // типовий аванс — 50% нетто
+          : round2((+r.netPay || 0) - advancePaid);        // залишок
+
+      if (payAmount <= 0) return r;
+
       addTransaction({
         date: paidDate, type: 'expense', counterparty: name,
-        amount: +r.netPay || 0, description: `Виплата з/п ${name} за ${period}`,
+        amount: payAmount,
+        description: part === 'advance'
+          ? `Аванс з/п ${name} за ${period}`
+          : `Виплата з/п (остаточний розрахунок) ${name} за ${period}`,
         payrollRecordId: r.id,
       });
 
-      const merged = { ...r, status: 'paid', paidDate };
+      const merged = part === 'advance'
+        ? { ...r, status: 'advance_paid', advanceAmount: round2(advancePaid + payAmount), advanceDate: paidDate }
+        : { ...r, status: 'paid', paidDate, finalAmount: payAmount };
       const { id: _i, fopId: _f, employeeId, period: pd, status, createdAt: _c, ...rest } = merged;
       dbUpdate('payroll_records', r.id, { employeeId, period: pd, status, data: rest });
       return merged;
