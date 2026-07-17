@@ -11,6 +11,7 @@ import SalesView     from '../../views/SalesView';
 import KdvView       from '../../views/KdvView';
 import DirectoriesView from '../../views/DirectoriesView';
 import RegistryView from '../../views/RegistryView';
+import DpsView from '../../views/DpsView';
 import DocumentsView from '../../views/DocumentsView';
 import ReportsView   from '../../views/ReportsView';
 import VatView       from '../../views/VatView';
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'warehouse', label: 'Склад',              icon: '▢', group: 'main', setting: 'useWarehouse' },
   { id: 'payroll',   label: 'Зарплата',           icon: '👥', group: 'main' },
   { id: 'kdv',       label: 'Книга доходів',      icon: '📒', group: 'main' },
+  { id: 'dps',         label: 'Звітність ДПС',       icon: '🏛', group: 'main' },
   { id: 'reports',   label: 'Звіти',              icon: '▥', group: 'main' },
   { id: 'vat',       label: 'ПДВ',                icon: '%', group: 'main', setting: 'isVatPayer' },
   { id: 'rro',       label: 'РРО / Каса',         icon: '🖨', group: 'main', setting: 'useRRO' },
