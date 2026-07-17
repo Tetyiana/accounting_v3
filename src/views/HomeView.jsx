@@ -7,6 +7,7 @@ import { TAX_GROUPS } from '../constants/taxOptions';
 import { calculateWarehouseStock } from '../utils/warehouseLogic';
 import { calcInvoiceStatus, calcInvoicePaid, fmtMoney } from '../utils/documentLogic';
 import { toVocative } from '../utils/vocativeUtils';
+import { buildDeadlines } from '../utils/deadlines';
 
 const Stat = ({ label, value, accent, color, onClick }) => (
   <div className={`stat-card${accent?' stat-card--accent':''}`}
@@ -58,6 +59,12 @@ const HomeView = ({ setActiveTab }) => {
   }, [vatInvoices, settings.isVatPayer]);
 
   const group = TAX_GROUPS.find(g => g.id === settings.taxGroup);
+
+  const deadlines = useMemo(() => buildDeadlines({
+    taxGroup: settings.taxGroup,
+    isVatPayer: settings.isVatPayer,
+    payrollRecords, employees,
+  }).slice(0, 8), [settings.taxGroup, settings.isVatPayer, payrollRecords, employees]);
   const today = new Date();
   const greeting = today.getHours() < 12 ? 'Доброго ранку' :
                    today.getHours() < 17 ? 'Добрий день' : 'Добрий вечір';
@@ -78,6 +85,29 @@ const HomeView = ({ setActiveTab }) => {
           {settings.useRRO ? ' · РРО' : ''}
         </p>
       </div>
+
+      {deadlines.length > 0 && (
+        <div className="settings-section" style={{ marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Найближчі терміни</h3>
+          {deadlines.map((d, i) => {
+            const overdue = d.daysTo < 0;
+            const urgent  = d.daysTo >= 0 && d.daysTo <= 3;
+            return (
+              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'baseline',
+                padding: '5px 0', borderBottom: '1px solid var(--border-light)', fontSize: '.9rem' }}>
+                <span style={{ minWidth: 88, fontWeight: 600,
+                  color: overdue ? 'var(--error)' : urgent ? 'var(--warning)' : 'var(--text)' }}>
+                  {d.date}
+                </span>
+                <span style={{ flex: 1 }}>{d.title}</span>
+                <span className={`badge badge--${overdue ? 'danger' : urgent ? 'warning' : 'muted'}`}>
+                  {overdue ? `прострочено ${-d.daysTo} дн.` : d.daysTo === 0 ? 'сьогодні' : `через ${d.daysTo} дн.`}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="stats-grid">
         <Stat label="Доходи"  value={`${fmtMoney(balance.income)} грн`}  color="var(--success)" />
