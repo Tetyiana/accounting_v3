@@ -17,10 +17,10 @@ const DOC_TYPES = [
 
 const RegistryView = () => {
   const { invoices, acts, payments, vatInvoices } = useData();
-  const [f, setF] = useState({ type: '', dateStart: '', dateEnd: '', q: '', amountMin: '', amountMax: '' });
+  const [f, setF] = useState({ type: '', dateStart: '', dateEnd: '', q: '', counterparty: '', status: '', amountMin: '', amountMax: '' });
   const set = e => setF(p => ({ ...p, [e.target.name]: e.target.value }));
 
-  const docs = useMemo(() => {
+  const allDocs = useMemo(() => {
     const rows = [];
     invoices.forEach(i => rows.push({
       id: i.id, kind: i.direction === 'outgoing' ? 'invoice_out' : 'invoice_in',
@@ -46,15 +46,24 @@ const RegistryView = () => {
       number: v.number, date: v.date, counterparty: v.counterparty || '',
       amount: +v.amount || 0, status: v.direction === 'outgoing' ? 'Видана' : 'Отримана',
     }));
-    return rows
-      .filter(r => !f.type || r.kind === f.type)
-      .filter(r => !f.dateStart || (r.date || '') >= f.dateStart)
-      .filter(r => !f.dateEnd   || (r.date || '') <= f.dateEnd)
-      .filter(r => !f.q || (r.counterparty + ' ' + r.number).toLowerCase().includes(f.q.toLowerCase()))
-      .filter(r => !f.amountMin || r.amount >= +f.amountMin)
-      .filter(r => !f.amountMax || r.amount <= +f.amountMax)
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [invoices, acts, payments, vatInvoices, f]);
+    return rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  }, [invoices, acts, payments, vatInvoices]);
+
+  const counterparties = useMemo(() =>
+    [...new Set(allDocs.map(d => d.counterparty).filter(Boolean))].sort(), [allDocs]);
+  const statuses = useMemo(() =>
+    [...new Set(allDocs.map(d => d.status).filter(Boolean))].sort(), [allDocs]);
+
+  const docs = useMemo(() => allDocs
+    .filter(r => !f.type || r.kind === f.type)
+    .filter(r => !f.dateStart || (r.date || '') >= f.dateStart)
+    .filter(r => !f.dateEnd   || (r.date || '') <= f.dateEnd)
+    .filter(r => !f.q || (r.counterparty + ' ' + r.number).toLowerCase().includes(f.q.toLowerCase()))
+    .filter(r => !f.counterparty || r.counterparty === f.counterparty)
+    .filter(r => !f.status || r.status === f.status)
+    .filter(r => !f.amountMin || r.amount >= +f.amountMin)
+    .filter(r => !f.amountMax || r.amount <= +f.amountMax),
+  [allDocs, f]);
 
   const total = useMemo(() => docs.reduce((s, d) => s + d.amount, 0), [docs]);
 
@@ -65,24 +74,45 @@ const RegistryView = () => {
         <div className="cell-muted">Документів: {docs.length} · Разом: <b>{fmtMoney(total)} грн</b></div>
       </div>
 
-      <div className="filters-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <select name="type" value={f.type} onChange={set} style={{ maxWidth: 200 }}>
-          <option value="">Всі типи</option>
-          {DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </select>
-        <input type="date" name="dateStart" value={f.dateStart} onChange={set} />
-        <input type="date" name="dateEnd" value={f.dateEnd} onChange={set} />
-        <input name="q" value={f.q} onChange={set} placeholder="Контрагент або №" style={{ maxWidth: 220 }} />
-        <input type="number" name="amountMin" value={f.amountMin} onChange={set} placeholder="Сума від" style={{ maxWidth: 110 }} />
-        <input type="number" name="amountMax" value={f.amountMax} onChange={set} placeholder="Сума до" style={{ maxWidth: 110 }} />
-      </div>
-
       <div className="table-wrap">
         <table className="data-table">
-          <thead><tr>
-            <th>Дата</th><th>Тип</th><th>№</th><th>Контрагент</th>
-            <th style={{ textAlign: 'right' }}>Сума, грн</th><th>Статус</th>
-          </tr></thead>
+          <thead>
+            <tr>
+              <th>Дата</th><th>Тип</th><th>№</th><th>Контрагент</th>
+              <th style={{ textAlign: 'right' }}>Сума, грн</th><th>Статус</th>
+            </tr>
+            <tr className="filter-row">
+              <th>
+                <input type="date" name="dateStart" value={f.dateStart} onChange={set} title="з" style={{width:'100%',minWidth:120}} />
+                <input type="date" name="dateEnd" value={f.dateEnd} onChange={set} title="по" style={{width:'100%',minWidth:120,marginTop:2}} />
+              </th>
+              <th>
+                <select name="type" value={f.type} onChange={set} style={{width:'100%'}}>
+                  <option value="">Всі</option>
+                  {DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </th>
+              <th>
+                <input name="q" value={f.q} onChange={set} placeholder="№..." style={{width:'100%',minWidth:70}} />
+              </th>
+              <th>
+                <select name="counterparty" value={f.counterparty} onChange={set} style={{width:'100%',maxWidth:220}}>
+                  <option value="">Всі</option>
+                  {counterparties.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </th>
+              <th>
+                <input type="number" name="amountMin" value={f.amountMin} onChange={set} placeholder="від" style={{width:'100%',minWidth:80}} />
+                <input type="number" name="amountMax" value={f.amountMax} onChange={set} placeholder="до" style={{width:'100%',minWidth:80,marginTop:2}} />
+              </th>
+              <th>
+                <select name="status" value={f.status} onChange={set} style={{width:'100%'}}>
+                  <option value="">Всі</option>
+                  {statuses.map(st => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </th>
+            </tr>
+          </thead>
           <tbody>
             {docs.length === 0 ? (
               <tr><td colSpan={6} className="table-empty">Документів немає</td></tr>
