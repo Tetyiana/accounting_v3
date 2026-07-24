@@ -180,3 +180,154 @@ export const buildPnXml = ({ fop, pn }) => {
 <HBOS>${esc(fop?.fullName || '')}</HBOS>`;
   return { xml: wrap(h, FORM_PN.schema, body), name: fileName(h) };
 };
+
+// ─── Розрахунок коригування до ПН (РК) F1201213 ──────────────────
+const FORM_RK = { cDoc: 'F12', cDocSub: '012', cDocVer: 13, schema: 'F1201213.xsd' };
+
+export const buildRkXml = ({ fop, rk }) => {
+  // rk: { date, number, counterparty, counterpartyTin, base, rate, description,
+  //      correctedNumber, correctedDate, correctionReason }
+  const d = rk.date || '';
+  const h = {
+    tin: fop?.rnokpp || '', ...regRaj(fop),
+    ...FORM_RK,
+    periodMonth: +d.slice(5, 7) || 1, periodType: 1, periodYear: +d.slice(0, 4) || new Date().getFullYear(),
+    dFill: today(),
+  };
+  const rate = +rk.rate || 20;
+  const base = +rk.base || 0;
+  const vat = Math.round(base * rate) / 100;
+  const dFillRk = d ? pad(+d.slice(8, 10), 2) + pad(+d.slice(5, 7), 2) + d.slice(0, 4) : today();
+  const dCorr = (rk.correctedDate || '').replace(/-/g, '');
+  const dCorrFmt = dCorr.length === 8 ? dCorr.slice(6, 8) + dCorr.slice(4, 6) + dCorr.slice(0, 4) : '';
+  const rateCode = rate === 20 ? 20 : rate === 14 ? 14 : rate === 7 ? 7 : 0;
+  const sign = base < 0 ? -1 : 1;
+  const body = `<HFILL>${dFillRk}</HFILL>
+<HNUM>${esc(rk.number || '')}</HNUM>
+<HNAMESEL>${esc('ФОП ' + (fop?.fullName || ''))}</HNAMESEL>
+<HKSEL>${esc(fop?.vatCertificate || fop?.rnokpp || '')}</HKSEL>
+<HTINSEL>${esc(fop?.rnokpp || '')}</HTINSEL>
+<HNAMEBUY>${esc(rk.counterparty || '')}</HNAMEBUY>
+<HKBUY>${esc(rk.counterpartyTin || '')}</HKBUY>
+<HNUMPN>${esc(rk.correctedNumber || '')}</HNUMPN>
+<HFILLPN>${dCorrFmt}</HFILLPN>
+<HREASON>${esc(rk.correctionReason || '')}</HREASON>
+<R01G7>${num(base)}</R01G7>
+<R01G109>${num(rate === 20 ? vat : 0)}</R01G109>
+<R01G110>${num(rate === 14 ? vat : 0)}</R01G110>
+<R01G111>${num(rate === 7 ? vat : 0)}</R01G111>
+<R03G7>${num(base + vat)}</R03G7>
+<TAB>
+<ROW ROWNUM="1">
+<RXXXXG2S>${esc(rk.correctionReason || 'Коригування')}</RXXXXG2S>
+<RXXXXG4S>${esc(rk.description || 'Товари/послуги')}</RXXXXG4S>
+<RXXXXG5>послуга</RXXXXG5>
+<RXXXXG6>1</RXXXXG6>
+<RXXXXG7>${sign}</RXXXXG7>
+<RXXXXG8>${num(Math.abs(base))}</RXXXXG8>
+<RXXXXG9>${rateCode}</RXXXXG9>
+<RXXXXG11>${num(base)}</RXXXXG11>
+<RXXXXG12>${num(vat)}</RXXXXG12>
+</ROW>
+</TAB>
+<HBOS>${esc(fop?.fullName || '')}</HBOS>`;
+  return { xml: wrap(h, FORM_RK.schema, body), name: fileName(h) };
+};
+
+// ─── Об'єднана звітність (4ДФ + Д1 ЄСВ) F0500108 ──────────────────
+// Податковий розрахунок сум доходу, нарахованого на користь платників, і сум
+// утриманого з них податку. Квартальна форма роботодавця (ФОП з найманими).
+// УВАГА: реальна форма містить ~40 полів на працівника — цей експорт дає
+// заповнення основного пакету; додаткові розділи (Д2, Д3, Д4, Д5, Д6)
+// заповнюються за наявності специфічних операцій.
+const FORM_1DF = { cDoc: 'F05', cDocSub: '001', cDocVer: 8, schema: 'F0500108.xsd' };
+
+export const buildUnifiedReportXml = ({ fop, year, quarter, employees, records }) => {
+  // employees: [{ id, fullName, rnokpp }]
+  // records: [{ employeeId, period: 'YYYY-MM', gross, pdfo, vz, esv, esvBase }]
+  const h = {
+    tin: fop?.rnokpp || '', ...regRaj(fop),
+    ...FORM_1DF,
+    periodMonth: quarter * 3, periodType: 2, periodYear: year, dFill: today(),
+  };
+  const qMonths = [quarter * 3 - 2, quarter * 3 - 1, quarter * 3].map(m => pad(m, 2));
+  const inQuarter = records.filter(r =>
+    r.period && r.period.startsWith(String(year)) && qMonths.includes(r.period.slice(5, 7)));
+
+  // Групування по працівнику (4ДФ)
+  const byEmp = new Map();
+  for (const r of inQuarter) {
+    const key = r.employeeId;
+    if (!byEmp.has(key)) byEmp.set(key, { gross: 0, pdfo: 0, vz: 0, esv: 0, esvBase: 0 });
+    const a = byEmp.get(key);
+    a.gross += +r.gross || 0; a.pdfo += +r.pdfo || 0;
+    a.vz    += +r.vz    || 0; a.esv  += +r.esv  || 0;
+    a.esvBase += +r.esvBase || 0;
+  }
+
+  const totals = { gross: 0, pdfo: 0, vz: 0, esv: 0, esvBase: 0 };
+  const rows4df = [];
+  let n = 0;
+  for (const [empId, a] of byEmp) {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) continue;
+    n++;
+    totals.gross += a.gross; totals.pdfo += a.pdfo;
+    totals.vz    += a.vz;    totals.esv  += a.esv; totals.esvBase += a.esvBase;
+    rows4df.push(`<ROW ROWNUM="${n}">
+<T1RXXXXG2S>${esc(emp.rnokpp || '')}</T1RXXXXG2S>
+<T1RXXXXG3>${num(a.gross)}</T1RXXXXG3>
+<T1RXXXXG3A>${num(a.gross)}</T1RXXXXG3A>
+<T1RXXXXG4>${num(a.pdfo)}</T1RXXXXG4>
+<T1RXXXXG4A>${num(a.pdfo)}</T1RXXXXG4A>
+<T1RXXXXG5>${num(a.vz)}</T1RXXXXG5>
+<T1RXXXXG5A>${num(a.vz)}</T1RXXXXG5A>
+<T1RXXXXG6>101</T1RXXXXG6>
+</ROW>`);
+  }
+
+  // Д1: помісячно, ЄСВ по кожному працівнику × місяць
+  const rowsD1 = [];
+  let m = 0;
+  for (const emp of employees) {
+    for (const month of qMonths) {
+      const period = `${year}-${month}`;
+      const monthRecs = inQuarter.filter(r => r.employeeId === emp.id && r.period === period);
+      if (monthRecs.length === 0) continue;
+      const gross = monthRecs.reduce((s, r) => s + (+r.gross || 0), 0);
+      const esvBase = monthRecs.reduce((s, r) => s + (+r.esvBase || 0), 0);
+      const esv = monthRecs.reduce((s, r) => s + (+r.esv || 0), 0);
+      m++;
+      rowsD1.push(`<ROW ROWNUM="${m}">
+<T3RXXXXG3S>${esc(emp.rnokpp || '')}</T3RXXXXG3S>
+<T3RXXXXG4S>${esc(emp.fullName || '')}</T3RXXXXG4S>
+<T3RXXXXG5>${+month}</T3RXXXXG5>
+<T3RXXXXG7>1</T3RXXXXG7>
+<T3RXXXXG8>${num(gross)}</T3RXXXXG8>
+<T3RXXXXG9>${num(esvBase)}</T3RXXXXG9>
+<T3RXXXXG10>22.00</T3RXXXXG10>
+<T3RXXXXG11>${num(esv)}</T3RXXXXG11>
+</ROW>`);
+    }
+  }
+
+  const body = `<HZ>${quarter}</HZ>
+<HZY>${year}</HZY>
+<HNAME>${esc('ФОП ' + (fop?.fullName || ''))}</HNAME>
+<HTIN>${esc(fop?.rnokpp || '')}</HTIN>
+<HLOC>${esc(fop?.legalAddress || '')}</HLOC>
+<HKSTI>${pad(h.cSti || 0, 4)}</HKSTI>
+<HKEMP>${n}</HKEMP>
+<T1RXXXXG3T>${num(totals.gross)}</T1RXXXXG3T>
+<T1RXXXXG4T>${num(totals.pdfo)}</T1RXXXXG4T>
+<T1RXXXXG5T>${num(totals.vz)}</T1RXXXXG5T>
+<T1TAB>
+${rows4df.join('\n')}
+</T1TAB>
+<T3TAB>
+${rowsD1.join('\n')}
+</T3TAB>
+<HBOS>${esc(fop?.fullName || '')}</HBOS>
+<HFILL>${today()}</HFILL>`;
+  return { xml: wrap(h, FORM_1DF.schema, body), name: fileName(h) };
+};

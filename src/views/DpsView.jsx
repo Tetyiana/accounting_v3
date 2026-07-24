@@ -5,7 +5,7 @@ import { useFop } from '../context/FopContext';
 import { ESV_AMOUNT } from '../utils/taxLogic';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
-import { buildEpG3Xml, buildEpG12Xml, downloadXml } from '../utils/xmlDps';
+import { buildEpG3Xml, buildEpG12Xml, buildUnifiedReportXml, downloadXml } from '../utils/xmlDps';
 
 // Звітність ДПС: декларація платника єдиного податку.
 // 1-2 групи — річна; 3 група — квартальна наростаючим підсумком.
@@ -20,7 +20,7 @@ const QUARTERS = [
 ];
 
 const DpsView = () => {
-  const { transactions } = useData();
+  const { transactions, employees, payrollRecords } = useData();
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const year = new Date().getFullYear();
@@ -110,6 +110,18 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td,th{border:1px solid #3
     openPrintWindow(html);
   };
 
+  const handleUnifiedXml = () => {
+    if (!employees?.length || !payrollRecords?.length) {
+      alert('Немає нарахувань зарплати за обраний період');
+      return;
+    }
+    const { xml, name } = buildUnifiedReportXml({
+      fop: activeFop, year: selYear, quarter: selQ,
+      employees, records: payrollRecords,
+    });
+    downloadXml(xml, name);
+  };
+
   const handleXml = () => {
     if (isG3) {
       const { xml, name } = buildEpG3Xml({
@@ -139,6 +151,9 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td,th{border:1px solid #3
         <h2 className="view-title">Звітність ДПС</h2>
         <button className="btn btn--primary" onClick={handlePrint}>🖨 Сформувати декларацію</button>
         <button className="btn btn--ghost" onClick={handleXml} style={{ marginLeft: 8 }}>⬇ XML для кабінету</button>
+        {employees?.length > 0 && (
+          <button className="btn btn--ghost" onClick={handleUnifiedXml} style={{ marginLeft: 8 }}>⬇ Об&apos;єднана звітність (4ДФ + Д1)</button>
+        )}
       </div>
 
       <div className="filters-bar">

@@ -3,7 +3,7 @@ import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
-import { buildPnXml, downloadXml } from '../utils/xmlDps';
+import { buildPnXml, buildRkXml, downloadXml } from '../utils/xmlDps';
 
 // Модуль ПДВ: реєстр виданих/отриманих ПН і РК, місячний розрахунок,
 // друкована декларація з ПДВ + XML-експорт ПН для е-кабінету.
@@ -16,6 +16,7 @@ const EMPTY = {
   date: new Date().toISOString().slice(0, 10),
   number: '', direction: 'outgoing', counterparty: '', amount: '',
   rate: 20, kind: 'pn',
+  correctedNumber: '', correctedDate: '', correctionReason: '',
 };
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const RATE_LABEL = { 20: 'Р.1.1', 14: 'Р.1.2', 7: 'Р.1.3', 0: 'Р.2/Р.3' };
@@ -121,6 +122,20 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
     openPrintWindow(html);
   };
 
+  const exportRkXml = (v) => {
+    const { xml, name } = buildRkXml({
+      fop: activeFop,
+      rk: {
+        date: v.date, number: v.number, counterparty: v.counterparty,
+        counterpartyTin: v.counterpartyTin || '', base: v.base, rate: v.rate,
+        description: v.description || 'Товари/послуги',
+        correctedNumber: v.correctedNumber, correctedDate: v.correctedDate,
+        correctionReason: v.correctionReason,
+      },
+    });
+    downloadXml(xml, name);
+  };
+
   const exportPnXml = (v) => {
     const { xml, name } = buildPnXml({
       fop: activeFop,
@@ -190,6 +205,16 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
             <div className="field"><label>База без ПДВ, грн{form.kind === 'rk' ? ' (може бути -)' : ''}</label>
               <input type="number" name="amount" value={form.amount} onChange={set} step="0.01" /></div>
           </div>
+          {form.kind === 'rk' && (
+            <div className="form-row-3" style={{ marginTop: 8 }}>
+              <div className="field"><label>№ коригованої ПН</label>
+                <input name="correctedNumber" value={form.correctedNumber} onChange={set} /></div>
+              <div className="field"><label>Дата коригованої ПН</label>
+                <input type="date" name="correctedDate" value={form.correctedDate} onChange={set} /></div>
+              <div className="field"><label>Причина коригування</label>
+                <input name="correctionReason" value={form.correctionReason} onChange={set} placeholder="напр., повернення товару" /></div>
+            </div>
+          )}
           {form.amount !== '' && !isNaN(+form.amount) && (
             <p className="cell-muted" style={{ fontSize: '.83rem' }}>
               ПДВ {form.rate}%: <b>{fmtMoney((+form.amount) * form.rate / 100)}</b> ·
@@ -222,9 +247,11 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(v.vat)}</td>
                 <td style={{ textAlign: 'right' }}>{fmtMoney(v.total)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
-                  {tab === 'outgoing' && v.kind === 'pn' && (
-                    <button className="btn-icon" title="XML для кабінету" onClick={() => exportPnXml(v)}>⬇</button>
-                  )}
+                  {tab === 'outgoing' && v.kind === 'pn' ? (
+                    <button className="btn-icon" title="XML ПН для ЄРПН" onClick={() => exportPnXml(v)}>⬇</button>
+                  ) : tab === 'outgoing' && v.kind === 'rk' ? (
+                    <button className="btn-icon" title="XML РК для ЄРПН" onClick={() => exportRkXml(v)}>⬇</button>
+                  ) : null}
                   <button className="btn-icon btn-icon--del"
                     onClick={() => window.confirm('Видалити запис?') && deleteVatInvoice(v.id)}>✕</button>
                 </td>
