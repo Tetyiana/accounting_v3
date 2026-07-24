@@ -5,6 +5,7 @@ import { useFop } from '../context/FopContext';
 import { ESV_AMOUNT } from '../utils/taxLogic';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
+import { buildEpG3Xml, buildEpG12Xml, downloadXml } from '../utils/xmlDps';
 
 // Звітність ДПС: декларація платника єдиного податку.
 // 1-2 групи — річна; 3 група — квартальна наростаючим підсумком.
@@ -109,6 +110,24 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td,th{border:1px solid #3
     openPrintWindow(html);
   };
 
+  const handleXml = () => {
+    if (isG3) {
+      const { xml, name } = buildEpG3Xml({
+        fop: activeFop, year: selYear, quarter: selQ,
+        incomeCumulative, epCumulative, vzCumulative, epPrev, vzPrev,
+        esvMonths: '111'.slice(0, monthsInPeriod > 3 ? 3 : monthsInPeriod),
+      });
+      downloadXml(xml, name);
+    } else {
+      const { xml, name } = buildEpG12Xml({
+        fop: activeFop, year: selYear,
+        incomeYear: incomeCumulative,
+        epYear: round2(epFixed * 12), vzYear: round2(vzFixed * 12),
+      });
+      downloadXml(xml, name);
+    }
+  };
+
   if (!['1', '2', '3_5', '3_3_vat'].includes(group)) {
     return <div className="view-placeholder"><h3>Звітність ДПС</h3>
       <p>Для загальної системи декларація про майновий стан і доходи — в розробці.</p></div>;
@@ -119,6 +138,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td,th{border:1px solid #3
       <div className="view-toolbar">
         <h2 className="view-title">Звітність ДПС</h2>
         <button className="btn btn--primary" onClick={handlePrint}>🖨 Сформувати декларацію</button>
+        <button className="btn btn--ghost" onClick={handleXml} style={{ marginLeft: 8 }}>⬇ XML для кабінету</button>
       </div>
 
       <div className="filters-bar">
