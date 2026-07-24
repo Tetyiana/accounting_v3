@@ -1,5 +1,7 @@
 # Пінгує Supabase кожні 3 дні, щоб безкоштовний проєкт
 # не ставився на паузу (пауза настає після 7 днів неактивності).
+# URL і publishable-ключ і так публічні (зашиті у src/lib/supabase.js) —
+# тримати їх у секретах не потрібно.
 name: Keep Supabase alive
 
 on:
@@ -12,14 +14,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: https://ggsaaymebyotodpjjukb.supabase.co
+          SUPABASE_KEY: sb_publishable_h-f0UaUZVyXjeD9Rj2T7-w_B97wydX1
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "${{ secrets.VITE_SUPABASE_URL }}/rest/v1/fops?select=id&limit=1" \
-            -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}")
+          code=$(curl -s -o /tmp/body -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/fops?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY")
           echo "HTTP $code"
+          cat /tmp/body
           # 200 (ok) або 401/406 (RLS відхилив анонімний запит) — все одно
-          # рахується активністю і будить/тримає проєкт активним
-          if [ "$code" -ge 500 ]; then
+          # рахується активністю і будить/тримає проєкт активним.
+          # Провал тільки при 5xx або мережевій помилці.
+          if [ "$code" -ge 500 ] || [ "$code" -lt 200 ]; then
             echo "Supabase не відповідає"; exit 1
           fi
