@@ -19,7 +19,7 @@ const Stat = ({ label, value, accent, color, onClick }) => (
 
 const HomeView = ({ setActiveTab }) => {
   const { user }                                                        = useAuth();
-  const { transactions, movements, vatInvoices, invoices, payments }   = useData();
+  const { transactions, movements, vatInvoices, invoices, payments, payrollRecords, employees } = useData();
   const { settings }                                                    = useSettings();
   const { activeFop }                                                   = useFop();
 

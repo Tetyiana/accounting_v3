@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { migrateLocalToSupabase, findLocalFops } from '../utils/migrateLocal';
 import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';

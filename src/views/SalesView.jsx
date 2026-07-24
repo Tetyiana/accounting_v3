@@ -85,7 +85,7 @@ ${docHeaderHtml(activeFop, mainIban)}
   </tr>
 </table>
 <table>
-  <thead><tr><th>№</th><th>${isDeliveryNote ? 'Найменування товару' : 'Найменування робіт (послуг)'}</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
+  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
   <tbody>${itemRows}</tbody>
   <tfoot>
     ${settings.isVatPayer ? `
@@ -149,7 +149,7 @@ ${act.invoiceNumber ? `<p>Підстава: рахунок №${act.invoiceNumbe
 склали цей акт про те, що Виконавцем надано, а Замовником прийнято наступні роботи (послуги):</p>
 `}
 <table>
-  <thead><tr><th>№</th><th>Найменування товару/послуги</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
+  <thead><tr><th>№</th><th>${isDeliveryNote ? 'Найменування товару' : 'Найменування робіт (послуг)'}</th><th>К-сть</th><th>Од.</th>${vatHeader}</tr></thead>
   <tbody>${itemRows}</tbody>
   <tfoot>
     ${settings.isVatPayer ? `

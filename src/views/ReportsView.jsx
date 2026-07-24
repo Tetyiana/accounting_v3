@@ -3,11 +3,11 @@ import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
 import { TAX_STRATEGIES, ESV_AMOUNT } from '../utils/taxLogic';
-import { buildLedgerEntries, LEDGER_ACCOUNTS } from '../utils/accountingLogic';
+import { buildLedgerEntries } from '../utils/accountingLogic';
 import { exportJSON, exportCSV } from '../utils/exportUtils';
 
 const ReportsView = () => {
-  const { transactions }  = useData();
+  const { transactions, payrollRecords } = useData();
   const { settings }      = useSettings();
   const year              = new Date().getFullYear();
 
