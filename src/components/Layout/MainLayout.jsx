@@ -22,6 +22,8 @@ import SettingsView  from '../../views/SettingsView';
 import TrashView     from '../../views/TrashView';
 import PayrollView   from '../../views/PayrollView';
 import FopProfileView from '../../views/FopProfileView';
+import HelpView from '../../views/HelpView';
+import SupportView from '../../views/SupportView';
 
 const TABS = [
   { id: 'home',      label: 'Головна',           icon: '⌂', group: 'main' },
@@ -38,6 +40,8 @@ const TABS = [
   { id: 'reports',   label: 'Звіти',              icon: '▥', group: 'main' },
   { id: 'vat',       label: 'ПДВ',                icon: '%', group: 'main', setting: 'isVatPayer' },
   { id: 'rro',       label: 'РРО / Каса',         icon: '🖨', group: 'main', setting: 'useRRO' },
+  { id: 'help',        label: 'Інструкція',          icon: 'ℹ', group: 'bottom' },
+  { id: 'support',     label: 'Підтримка',           icon: '🛟', group: 'bottom' },
   { id: 'pricing',     label: 'Тарифи',              icon: '💳', group: 'bottom' },
   { id: 'trash',     label: 'Кошик',              icon: '🗑', group: 'bottom' },
   { id: 'settings',  label: 'Налаштування',       icon: '⚙', group: 'bottom' },
@@ -66,6 +70,12 @@ const VIEWS = {
   rro:       ()     => <RroView />,
   trash:     ()     => <TrashView />,
   settings:  ()     => <SettingsView />,
+  kdv:       ()     => <KdvView />,
+  accounting:()     => <AccountingView />,
+  dps:       ()     => <DpsView />,
+  pricing:   ()     => <PricingView />,
+  help:      ()     => <HelpView />,
+  support:   ()     => <SupportView />,
 };
 
 const useIsMobile = () => {
