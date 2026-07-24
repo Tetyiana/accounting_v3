@@ -196,7 +196,6 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         unpaidCalendarDays:   +unpaidCalendarDays || 0,
         unpaidStartDate:      unpaidStartDate,
         unpaidEndDate:        unpaidEndDate,
-        unpaidCalendarDays:   unpaidCalendarDays,
         workingDaysInMonth:   wdim,
         unpaidDeductionAmount:unpaid2.deduction,
         otherAccruals:        other,
