@@ -27,10 +27,10 @@ import SupportView from '../../views/SupportView';
 
 const TABS = [
   { id: 'home',      label: 'Головна',           icon: '⌂', group: 'main' },
-  { id: 'journal',   label: 'Журнал операцій',        icon: '₴', group: 'main' },
+  { id: 'journal',   label: 'Банк / Каса',            icon: '₴', group: 'main' },
   { id: 'sales',       label: 'Продажі/Закупівлі',  icon: '🗒', group: 'main' },
   { id: 'debtors',     label: 'Дебітори/Кредитори', icon: '⇄', group: 'main' },
-  { id: 'registry',    label: 'Реєстр документів',   icon: '🗂', group: 'main' },
+  { id: 'registry',    label: 'Книга КОГО',          icon: '📒', group: 'main' },
   { id: 'directories', label: 'Довідники',           icon: '📋', group: 'main' },
   { id: 'warehouse', label: 'Склад',              icon: '▢', group: 'main', setting: 'useWarehouse' },
   { id: 'payroll',   label: 'Зарплата',           icon: '👥', group: 'main' },

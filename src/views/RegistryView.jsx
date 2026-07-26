@@ -3,7 +3,7 @@ import { useData } from '../context/DataContext';
 import { ACT_TYPES, INVOICE_STATUSES } from '../constants/documentTypes';
 import { fmtMoney } from '../utils/documentLogic';
 
-// Реєстр документів: усі документи всіх типів в одному журналі
+// Книга обліку господарських операцій (КОГО): усі документи всіх типів в одному журналі
 // з фільтрами (тип, дата, контрагент, сума) і підсумками.
 
 const DOC_TYPES = [
@@ -70,7 +70,7 @@ const RegistryView = () => {
   return (
     <div className="view-registry">
       <div className="view-toolbar">
-        <h2 className="view-title">Реєстр документів</h2>
+        <h2 className="view-title">Книга обліку господарських операцій</h2>
         <div className="cell-muted">Документів: {docs.length} · Разом: <b>{fmtMoney(total)} грн</b></div>
       </div>
 
@@ -83,30 +83,30 @@ const RegistryView = () => {
             </tr>
             <tr className="filter-row">
               <th>
-                <input type="date" name="dateStart" value={f.dateStart} onChange={set} title="з" style={{width:'100%',minWidth:120}} />
-                <input type="date" name="dateEnd" value={f.dateEnd} onChange={set} title="по" style={{width:'100%',minWidth:120,marginTop:2}} />
+                <input type="date" name="dateStart" value={f.dateStart} onChange={set} title="з" />
+                <input type="date" name="dateEnd" value={f.dateEnd} onChange={set} title="по" />
               </th>
               <th>
-                <select name="type" value={f.type} onChange={set} style={{width:'100%'}}>
+                <select name="type" value={f.type} onChange={set} >
                   <option value="">Всі</option>
                   {DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
                 </select>
               </th>
               <th>
-                <input name="q" value={f.q} onChange={set} placeholder="№..." style={{width:'100%',minWidth:70}} />
+                <input name="q" value={f.q} onChange={set} placeholder="№..." />
               </th>
               <th>
-                <select name="counterparty" value={f.counterparty} onChange={set} style={{width:'100%',maxWidth:220}}>
+                <select name="counterparty" value={f.counterparty} onChange={set} >
                   <option value="">Всі</option>
                   {counterparties.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </th>
               <th>
-                <input type="number" name="amountMin" value={f.amountMin} onChange={set} placeholder="від" style={{width:'100%',minWidth:80}} />
-                <input type="number" name="amountMax" value={f.amountMax} onChange={set} placeholder="до" style={{width:'100%',minWidth:80,marginTop:2}} />
+                <input type="number" name="amountMin" value={f.amountMin} onChange={set} placeholder="від" />
+                <input type="number" name="amountMax" value={f.amountMax} onChange={set} placeholder="до" />
               </th>
               <th>
-                <select name="status" value={f.status} onChange={set} style={{width:'100%'}}>
+                <select name="status" value={f.status} onChange={set} >
                   <option value="">Всі</option>
                   {statuses.map(st => <option key={st} value={st}>{st}</option>)}
                 </select>

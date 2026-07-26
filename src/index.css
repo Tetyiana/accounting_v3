@@ -1131,9 +1131,13 @@ body { font-size: 1rem; }
   .data-table tr td[colspan] { white-space: normal; }
 }
 
-/* Рядок фільтрів у заголовку таблиці (Реєстр документів) */
-.data-table .filter-row th { background: #fff; padding: 4px 6px; }
+/* Рядок фільтрів у заголовку таблиці (Реєстр документів / Книга обліку) */
+.data-table .filter-row th { background: #fff; padding: 4px 6px; vertical-align: top; }
 .data-table .filter-row input, .data-table .filter-row select {
   font-size: .8rem; padding: 4px 6px; border: 1px solid var(--border);
   border-radius: 6px; background: #fff;
+  display: block; width: 100%; box-sizing: border-box;
 }
+.data-table .filter-row input + input,
+.data-table .filter-row input + select,
+.data-table .filter-row select + input { margin-top: 4px; }

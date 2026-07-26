@@ -276,7 +276,7 @@ const JournalView = () => {
   return (
     <div className="view-journal">
       <div className="view-toolbar">
-        <h2 className="view-title">Журнал операцій (Банк / Каса)</h2>
+        <h2 className="view-title">Банк / Каса</h2>
         <div className="toolbar-actions">
           <button className="btn btn--success" onClick={() => openForm('income')}>+ Надходження</button>
           <button className="btn btn--danger"  onClick={() => openForm('expense')}>− Списання</button>
