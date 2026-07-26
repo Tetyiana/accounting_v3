@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
+import AttachmentsList from '../components/common/AttachmentsList';
 import {
   INVOICE_STATUSES, ACT_TYPES, PAYMENT_METHODS, VAT_RATES, UNITS,
   EMPTY_INVOICE, EMPTY_ACT, EMPTY_PAYMENT, EMPTY_ITEM,
@@ -354,7 +355,7 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
   // Баг 4: генерація рахунку через HTML+window.print() — підтримує кирилицю без embedded шрифтів
   const handlePdf = () => {
     try {
-      openPrintWindow(buildInvoiceHtml(form, activeFop, settings));
+      openPrintWindow(buildInvoiceHtml(form, activeFop, settings), { fop: activeFop });
     } catch(e) {
       console.error('Помилка генерації рахунку:', e);
       alert('Помилка: ' + (e.message || String(e)));
@@ -423,6 +424,12 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
         vatEnabled={settings.isVatPayer}
         productOptions={productOptions}
       />
+      {form.id && activeFop && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '.85rem', fontWeight: 500, marginBottom: 6 }}>Прикріплені файли</div>
+          <AttachmentsList fopId={activeFop.id} entityType="invoice" entityId={form.id} />
+        </div>
+      )}
       <div className="form-actions">
         <button className="btn btn--primary" onClick={handleSave}>Зберегти рахунок</button>
         <button className="btn btn--ghost" onClick={handlePdf}>⇩ PDF</button>
@@ -458,7 +465,7 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
 
   const handlePrint = () => {
     try {
-      openPrintWindow(buildActHtml(form, activeFop, settings));
+      openPrintWindow(buildActHtml(form, activeFop, settings), { fop: activeFop });
     } catch(e) {
       console.error('Помилка генерації акту:', e);
       alert('Помилка: ' + (e.message || String(e)));
@@ -512,6 +519,12 @@ const ActForm = ({ invoice, onSave, onCancel, actList }) => {
         </div>
       </div>
       <ItemsTable items={form.items} onChange={items => setForm(p => ({ ...p, items }))} vatEnabled={settings.isVatPayer} />
+      {form.id && activeFop && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '.85rem', fontWeight: 500, marginBottom: 6 }}>Прикріплені файли</div>
+          <AttachmentsList fopId={activeFop.id} entityType={form.type === 'delivery_note' ? 'delivery_note' : 'act'} entityId={form.id} />
+        </div>
+      )}
       <div className="form-actions">
         <button className="btn btn--primary" onClick={handleSave}>Зберегти акт</button>
         <button className="btn btn--ghost" onClick={handlePrint}>⇩ PDF</button>
@@ -594,7 +607,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
 
   const handlePrintInvoice = () => {
     try {
-      openPrintWindow(buildInvoiceHtml(inv, activeFop, settings));
+      openPrintWindow(buildInvoiceHtml(inv, activeFop, settings), { fop: activeFop });
     } catch(e) {
       console.error('Помилка генерації рахунку:', e);
       alert('Помилка: ' + (e.message || String(e)));
@@ -603,7 +616,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
 
   const handlePrintAct = (act) => {
     try {
-      openPrintWindow(buildActHtml(act, activeFop, settings));
+      openPrintWindow(buildActHtml(act, activeFop, settings), { fop: activeFop });
     } catch(e) {
       console.error('Помилка генерації акту:', e);
       alert('Помилка: ' + (e.message || String(e)));

@@ -92,7 +92,7 @@ const HrOrders = ({ employees }) => {
     });
     if (form.orderType === 'transfer') updateEmployee(emp.id, { position: form.position, salary: +form.salary });
     if (form.orderType === 'dismiss')  updateEmployee(emp.id, { isActive: false, fireDate: form.effectiveDate || form.orderDate });
-    openPrintWindow(buildOrderHtml(order, emp, activeFop));
+    openPrintWindow(buildOrderHtml(order, emp, activeFop), { fop: activeFop });
     setShow(false);
   };
 
@@ -160,7 +160,7 @@ const HrOrders = ({ employees }) => {
                   <td>{ORDER_TYPES.find(t => t.id === o.orderType)?.label || o.orderType}</td>
                   <td>{emp?.fullName || '—'}</td>
                   <td><div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn btn--ghost btn--sm" onClick={() => openPrintWindow(buildOrderHtml(o, emp, activeFop))}>🖨</button>
+                    <button className="btn btn--ghost btn--sm" onClick={() => openPrintWindow(buildOrderHtml(o, emp, activeFop), { fop: activeFop })}>🖨</button>
                     <button className="btn-icon btn-icon--del" onClick={() => window.confirm('Видалити наказ?') && deleteHrOrder(o.id)}>✕</button>
                   </div></td>
                 </tr>

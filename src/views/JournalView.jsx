@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
+import AttachmentsList from '../components/common/AttachmentsList';
 import { calculateRunningBalance } from '../utils/accountingLogic';
 import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
@@ -270,7 +271,7 @@ const JournalView = () => {
 
   const handlePrintJournalOrder = () => {
     const html = buildJournalOrderHtml(filtered, { dateStart: filter.dateStart, dateEnd: filter.dateEnd, activeFop });
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   return (
@@ -373,6 +374,12 @@ const JournalView = () => {
               </div>
             )}
           </div>
+          {editId && activeFop && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              <div style={{ fontSize: '.85rem', fontWeight: 500, marginBottom: 6 }}>Прикріплені файли</div>
+              <AttachmentsList fopId={activeFop.id} entityType="transaction" entityId={editId} />
+            </div>
+          )}
           <div className="form-actions">
             <button className="btn btn--primary" onClick={handleSave}>Зберегти</button>
             <button className="btn btn--ghost"   onClick={() => setShowForm(false)}>Скасувати</button>

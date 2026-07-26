@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
+import { useFop } from '../context/FopContext';
 import { VAT_RATES, UNITS } from '../constants/documentTypes';
+import AttachmentsList from '../components/common/AttachmentsList';
 
 const EMPTY_CLIENT = {
   id: null, name: '', ipn: '', phone: '', email: '',
@@ -12,6 +14,7 @@ const EMPTY_PRODUCT = {
 };
 
 const ClientForm = ({ initial, onSave, onCancel }) => {
+  const { activeFop } = useFop();
   const [form, setForm] = useState(initial || { ...EMPTY_CLIENT });
   const [err, setErr] = useState('');
   const set = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
@@ -54,6 +57,12 @@ const ClientForm = ({ initial, onSave, onCancel }) => {
           Платник ПДВ (ІПН = РНОКПП/ЄДРПОУ, свідоцтво з 2014 р. скасовано)
         </label>
       </div>
+      {form.id && activeFop && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '.85rem', fontWeight: 500, marginBottom: 6 }}>Прикріплені файли (договори, реквізити, скани)</div>
+          <AttachmentsList fopId={activeFop.id} entityType="counterparty" entityId={form.id} />
+        </div>
+      )}
       <div className="form-actions" style={{ marginTop: 12 }}>
         <button className="btn btn--primary" onClick={() => {
           if (!form.name.trim()) { setErr('Назва обов\'язкова'); return; }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useFop } from '../context/FopContext';
+import FopDocumentsSection from '../components/common/FopDocumentsSection';
 import { useAuth } from '../context/AuthContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
 import { EMPTY_FOP, BANK_ACCOUNT_EMPTY } from '../constants/fopFields';
@@ -70,6 +71,7 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
     { id: 'bank',    label: 'Банківські рахунки' },
     { id: 'tax',     label: 'Оподаткування' },
     { id: 'rro',     label: 'РРО / ПРРО', disabled: !form.useRRO },
+    { id: 'docs',    label: 'Документи і факсиміле' },
     { id: 'extra',   label: 'Додатково' },
   ];
 
@@ -265,6 +267,20 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ─── Документи і факсиміле ─────────────────────── */}
+          {section === 'docs' && form.id && (
+            <FopDocumentsSection
+              fopId={form.id}
+              fop={form}
+              onFopChanged={patch => setForm(p => ({ ...p, ...patch }))}
+            />
+          )}
+          {section === 'docs' && !form.id && (
+            <p className="cell-muted" style={{ padding: 20 }}>
+              Спочатку збережіть основні дані ФОПа, а потім поверніться сюди для завантаження документів.
+            </p>
           )}
 
           {/* ─── Додатково ─────────────────────────────────── */}

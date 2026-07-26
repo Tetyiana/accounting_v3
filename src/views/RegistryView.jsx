@@ -2,11 +2,13 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { ACT_TYPES, INVOICE_STATUSES } from '../constants/documentTypes';
 import { fmtMoney } from '../utils/documentLogic';
+import { buildLedgerEntries } from '../utils/accountingLogic';
 
-// Книга обліку господарських операцій (КОГО): усі документи всіх типів в одному журналі
-// з фільтрами (тип, дата, контрагент, сума) і підсумками.
+// Книга обліку господарських операцій (КОГО): усі документи + грошові операції
+// з проводками Дт/Кт в одному журналі, з фільтрами і підсумками.
 
 const DOC_TYPES = [
+  { id: 'transaction', label: 'Грошова операція' },
   { id: 'invoice_out', label: 'Рахунок (вих.)' },
   { id: 'invoice_in',  label: 'Рахунок (вх.)' },
   { id: 'act',         label: 'Акт' },
@@ -16,12 +18,25 @@ const DOC_TYPES = [
 ];
 
 const RegistryView = () => {
-  const { invoices, acts, payments, vatInvoices } = useData();
+  const { invoices, acts, payments, vatInvoices, transactions } = useData();
   const [f, setF] = useState({ type: '', dateStart: '', dateEnd: '', q: '', counterparty: '', status: '', amountMin: '', amountMax: '' });
   const set = e => setF(p => ({ ...p, [e.target.name]: e.target.value }));
 
   const allDocs = useMemo(() => {
     const rows = [];
+    // Грошові операції з проводками
+    const entries = buildLedgerEntries(transactions || []);
+    (transactions || []).forEach(t => {
+      const entry = entries.find(e => e.transactionId === t.id);
+      rows.push({
+        id: t.id, kind: 'transaction', kindLabel: 'Грошова операція',
+        number: '', date: t.date, counterparty: t.counterparty || '',
+        amount: Math.abs(+t.amount || 0),
+        status: t.type === 'income' ? 'Надходження' : 'Витрата',
+        entry: entry ? `Дт ${entry.debit.code} — Кт ${entry.credit.code}` : '',
+        description: t.description || '',
+      });
+    });
     invoices.forEach(i => rows.push({
       id: i.id, kind: i.direction === 'outgoing' ? 'invoice_out' : 'invoice_in',
       kindLabel: i.direction === 'outgoing' ? 'Рахунок (вих.)' : 'Рахунок (вх.)',
@@ -47,7 +62,7 @@ const RegistryView = () => {
       amount: +v.amount || 0, status: v.direction === 'outgoing' ? 'Видана' : 'Отримана',
     }));
     return rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  }, [invoices, acts, payments, vatInvoices]);
+  }, [invoices, acts, payments, vatInvoices, transactions]);
 
   const counterparties = useMemo(() =>
     [...new Set(allDocs.map(d => d.counterparty).filter(Boolean))].sort(), [allDocs]);
@@ -80,6 +95,7 @@ const RegistryView = () => {
             <tr>
               <th>Дата</th><th>Тип</th><th>№</th><th>Контрагент</th>
               <th style={{ textAlign: 'right' }}>Сума, грн</th><th>Статус</th>
+              <th>Зміст / Проводка</th>
             </tr>
             <tr className="filter-row">
               <th>
@@ -111,11 +127,12 @@ const RegistryView = () => {
                   {statuses.map(st => <option key={st} value={st}>{st}</option>)}
                 </select>
               </th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {docs.length === 0 ? (
-              <tr><td colSpan={6} className="table-empty">Документів немає</td></tr>
+              <tr><td colSpan={7} className="table-empty">Записів немає</td></tr>
             ) : docs.map(d => (
               <tr key={d.kind + d.id}>
                 <td>{d.date}</td>
@@ -124,6 +141,9 @@ const RegistryView = () => {
                 <td>{d.counterparty || '—'}</td>
                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(d.amount)}</td>
                 <td className="cell-muted">{d.status}</td>
+                <td className="cell-muted" style={{ fontSize: '.82rem' }}>
+                  {d.entry || d.description || ''}
+                </td>
               </tr>
             ))}
           </tbody>

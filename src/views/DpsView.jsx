@@ -107,7 +107,7 @@ table{width:100%;border-collapse:collapse;margin:8px 0}td,th{border:1px solid #3
 <div>Підпис: ___________________ ФОП ${activeFop?.fullName || ''}</div>
 </div>
 </body></html>`;
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   const handleUnifiedXml = () => {

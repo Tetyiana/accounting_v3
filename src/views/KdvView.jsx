@@ -165,7 +165,7 @@ td,th{border:1px solid #333;padding:4px 6px}th{background:#f0f0f0}
 <tfoot><tr>${totals}</tr></tfoot></table>
 <p style="margin-top:24px">Підпис: ___________________ ФОП ${activeFop?.fullName || ''}</p>
 </body></html>`;
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   // ─── Рендер ────────────────────────────────────────────────────

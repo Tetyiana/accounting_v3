@@ -119,7 +119,7 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
 <div>Дата: ${new Date().toISOString().slice(0, 10)}</div>
 <div>Підпис: ___________________</div>
 </div></body></html>`;
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   const exportRkXml = (v) => {

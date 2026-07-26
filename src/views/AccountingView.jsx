@@ -65,7 +65,7 @@ th{background:#f0f0f0}td:first-child,th:first-child{text-align:left}
   `<td>${matrix[d]?.[c] ? fmtMoney(matrix[d][c]) : ''}</td>`).join('')}<td><b>${debitTotals[d] ? fmtMoney(debitTotals[d]) : ''}</b></td></tr>`).join('')}
 <tr><td><b>Разом Кт</b></td>${codes.map(c => `<td><b>${creditTotals[c] ? fmtMoney(creditTotals[c]) : ''}</b></td>`).join('')}<td></td></tr>
 </tbody></table></body></html>`;
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   const printJournalOrder = () => {
@@ -81,7 +81,7 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
 <tr><td colspan="5"><b>Оборот Дт ${selAcc}</b></td><td align="right"><b>${fmtMoney(accTotals.debit)}</b></td></tr>
 <tr><td colspan="5"><b>Оборот Кт ${selAcc}</b></td><td align="right"><b>${fmtMoney(accTotals.credit)}</b></td></tr>
 </tbody></table></body></html>`;
-    openPrintWindow(html);
+    openPrintWindow(html, { fop: activeFop });
   };
 
   return (
