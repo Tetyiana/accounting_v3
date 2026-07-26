@@ -50,6 +50,76 @@ const docSignatureHtml = (activeFop) => `
   <div style="text-align:right">М.П.</div>
 </div>`;
 
+// Простий рамковий договір про надання послуг / поставку товарів
+const buildContractHtml = (inv, activeFop, settings) => {
+  const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
+  const subj = (inv.items || []).some(it => (it.unit || '').match(/послуга|год/i))
+    ? 'надання послуг'
+    : 'поставку товару';
+  const totalsNow = calcDocTotals(inv.items || []);
+  const itemsList = (inv.items || []).map((it, i) =>
+    `${i + 1}. ${it.name} — ${it.qty} ${it.unit || 'шт'} × ${fmtMoney(it.price)} = ${fmtMoney((+it.qty || 0) * (+it.price || 0))} грн`
+  ).join('<br>');
+
+  return `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8">
+<title>Договір №${inv.number}</title>${DOC_PRINT_STYLE}</head><body>
+<h2 style="text-align:center">ДОГОВІР № ${inv.number}<br><small style="font-weight:normal">про ${subj}</small></h2>
+<p style="display:flex;justify-content:space-between"><span>м. ${activeFop?.legalAddressCity || 'Київ'}</span><span>${inv.date}</span></p>
+
+<p><b>ФОП ${activeFop?.fullName || ''}</b> (РНОКПП ${activeFop?.rnokpp || ''}), надалі — «Виконавець/Постачальник», з однієї сторони,
+та <b>${inv.clientName || ''}</b>${inv.clientIpn ? ` (ЄДРПОУ/РНОКПП ${inv.clientIpn})` : ''}, надалі — «Замовник/Покупець», з іншої сторони,
+уклали цей Договір про таке:</p>
+
+<h3>1. Предмет договору</h3>
+<p>1.1. Виконавець зобов'язується ${subj === 'надання послуг' ? 'надати послуги' : 'поставити товар'} згідно з переліком, наведеним у п. 1.2, а Замовник — прийняти та оплатити їх.</p>
+<p>1.2. Перелік та вартість:</p>
+<p style="margin-left:20px">${itemsList}</p>
+<p><b>Загальна сума: ${fmtMoney(totalsNow.total)} грн${settings.isVatPayer ? ' (у т.ч. ПДВ 20%)' : ' (без ПДВ)'}.</b></p>
+
+<h3>2. Порядок оплати</h3>
+<p>2.1. Оплата здійснюється у безготівковій формі на поточний рахунок Виконавця${mainIban?.iban ? ` (IBAN ${mainIban.iban})` : ''} протягом 5 (п'яти) банківських днів з дати отримання рахунку.</p>
+<p>2.2. Обов'язок Замовника з оплати вважається виконаним з моменту зарахування коштів на рахунок Виконавця.</p>
+
+<h3>3. Права та обов'язки Сторін</h3>
+<p>3.1. Виконавець зобов'язується ${subj === 'надання послуг' ? 'надати послуги якісно та у строк, погоджений Сторонами' : 'поставити товар належної якості, у кількості та в строк, погоджені Сторонами'}.</p>
+<p>3.2. Замовник зобов'язується прийняти ${subj === 'надання послуг' ? 'надані послуги' : 'поставлений товар'} та своєчасно їх оплатити.</p>
+<p>3.3. Приймання оформлюється ${subj === 'надання послуг' ? 'Актом наданих послуг' : 'Видатковою накладною'}, який підписується Сторонами.</p>
+
+<h3>4. Відповідальність Сторін</h3>
+<p>4.1. За невиконання або неналежне виконання зобов'язань Сторони несуть відповідальність згідно з чинним законодавством України.</p>
+<p>4.2. У разі прострочення оплати Замовник сплачує пеню у розмірі подвійної облікової ставки НБУ від суми заборгованості за кожен день прострочення.</p>
+
+<h3>5. Строк дії та інші умови</h3>
+<p>5.1. Договір набирає чинності з моменту підписання Сторонами і діє до повного виконання зобов'язань.</p>
+<p>5.2. Усі зміни та доповнення оформлюються додатковими угодами.</p>
+<p>5.3. Спори вирішуються шляхом переговорів, а у разі недосягнення згоди — у судовому порядку.</p>
+
+<h3>6. Реквізити Сторін</h3>
+<table style="width:100%; border:none; margin-top:8px"><tr>
+<td style="width:50%; vertical-align:top; border:none; padding:0 8px 0 0">
+  <b>Виконавець/Постачальник:</b><br>
+  ФОП ${activeFop?.fullName || ''}<br>
+  РНОКПП: ${activeFop?.rnokpp || ''}<br>
+  Адреса: ${activeFop?.legalAddress || ''}<br>
+  ${mainIban ? `IBAN: ${mainIban.iban}<br>Банк: ${mainIban.bankName || ''}<br>` : ''}
+  ${activeFop?.phone ? `Тел.: ${activeFop.phone}<br>` : ''}
+</td>
+<td style="width:50%; vertical-align:top; border:none; padding:0 0 0 8px">
+  <b>Замовник/Покупець:</b><br>
+  ${inv.clientName || ''}<br>
+  ${inv.clientIpn ? `ЄДРПОУ/РНОКПП: ${inv.clientIpn}<br>` : ''}
+  ${inv.clientAddress ? `Адреса: ${inv.clientAddress}<br>` : ''}
+</td>
+</tr></table>
+
+<div style="margin-top:30px; display:flex; justify-content:space-between">
+  <div><b>Виконавець:</b><br>ФОП ${activeFop?.fullName || ''}<br><div id="fax-slot"></div>___________________________<br><small>(підпис)</small><br>М.П.</div>
+  <div><b>Замовник:</b><br>${inv.clientName || ''}<br><br><br>___________________________<br><small>(підпис)</small><br>М.П.</div>
+</div>
+<script>window.onload=()=>window.print()</script>
+</body></html>`;
+};
+
 // Друк рахунку (нового або вже збереженого)
 const buildInvoiceHtml = (inv, activeFop, settings) => {
   const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
@@ -436,10 +506,10 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
 };
 
 // ─── Форма акту / накладної ─────────────────────────────────────────
-const ActForm = ({ invoice, onSave, onCancel, actList }) => {
+const ActForm = ({ invoice, onSave, onCancel, actList, forcedType }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
-  const inferredType = inferDocType(invoice.items);
+  const inferredType = forcedType || inferDocType(invoice.items);
   const [form, setForm] = useState({
     ...EMPTY_ACT,
     invoiceId:  invoice.id,
@@ -593,7 +663,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
-  const [addAct, setAddAct] = useState(false);
+  const [addActType, setAddActType] = useState(null); // null | 'act' | 'delivery_note'
   const [addPay, setAddPay] = useState(false);
 
   const status = calcInvoiceStatus(inv, invPayments);
@@ -619,9 +689,18 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
     }
   };
 
+  const handlePrintContract = () => {
+    try {
+      openPrintWindow(buildContractHtml(inv, activeFop, settings), { fop: activeFop });
+    } catch(e) {
+      console.error('Помилка генерації договору:', e);
+      alert('Помилка: ' + (e.message || String(e)));
+    }
+  };
+
   return (
     <>
-      <tr className={`invoice-row${open ? ' invoice-row--open' : ''}`} onClick={() => { setOpen(p=>!p); setAddAct(false); setAddPay(false); }}>
+      <tr className={`invoice-row${open ? ' invoice-row--open' : ''}`} onClick={() => { setOpen(p=>!p); setAddActType(null); setAddPay(false); }}>
         <td onClick={e => e.stopPropagation()}>
           <select className="table-input" style={{minWidth:130}} value={inv.status || 'sent'}
             onChange={e => onUpdateStatus(inv.id, e.target.value)}>
@@ -640,13 +719,16 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
         <td style={{ textAlign: 'right', color: paid > 0 ? 'var(--success)' : undefined }}>{fmtMoney(paid)}</td>
         <td style={{ textAlign: 'right', color: remain > 0 ? 'var(--error)' : undefined }}>{fmtMoney(remain)}</td>
         <td onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>⇩ PDF</button>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>🖨 Рахунок</button>
+            <button className="btn btn--ghost btn--sm" title="Створити акт виконаних робіт"
+              onClick={() => { setOpen(true); setAddActType(p => p === 'act' ? null : 'act'); setAddPay(false); }}>+ Акт</button>
+            <button className="btn btn--ghost btn--sm" title="Створити видаткову накладну"
+              onClick={() => { setOpen(true); setAddActType(p => p === 'delivery_note' ? null : 'delivery_note'); setAddPay(false); }}>+ Накладна</button>
+            <button className="btn btn--ghost btn--sm" title="Сформувати договір" onClick={handlePrintContract}>+ Договір</button>
+            <button className="btn btn--ghost btn--sm" title="Додати оплату"
+              onClick={() => { setOpen(true); setAddPay(p=>!p); setAddActType(null); }}>+ Оплата</button>
             <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>ред.</button>
-            <button className="btn btn--ghost btn--sm" title="Акт/Накладна" onClick={() => { setOpen(true); setAddAct(p=>!p); setAddPay(false); }}>
-              + {inferDocType(inv.items) === 'act' ? 'Акт' : 'Накладна'}
-            </button>
-            <button className="btn btn--ghost btn--sm" title="Оплата" onClick={() => { setOpen(true); setAddPay(p=>!p); setAddAct(false); }}>+ Оплата</button>
             <button className="btn-icon btn-icon--del" title="Видалити" onClick={() => window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id)}>✕</button>
           </div>
         </td>
@@ -704,12 +786,13 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
                 </div>
               )}
 
-              {addAct && (
+              {addActType && (
                 <ActForm
                   invoice={inv}
                   actList={allActs}
-                  onSave={(act) => { onAddAct(act); setAddAct(false); }}
-                  onCancel={() => setAddAct(false)}
+                  forcedType={addActType}
+                  onSave={(act) => { onAddAct(act); setAddActType(null); }}
+                  onCancel={() => setAddActType(null)}
                 />
               )}
 
