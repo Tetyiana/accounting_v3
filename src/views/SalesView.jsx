@@ -659,7 +659,7 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, isVatPayer, productOptions }) => {
+const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
@@ -728,6 +728,17 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
             <button className="btn btn--ghost btn--sm" title="Сформувати договір" onClick={handlePrintContract}>+ Договір</button>
             <button className="btn btn--ghost btn--sm" title="Додати оплату"
               onClick={() => { setOpen(true); setAddPay(p=>!p); setAddActType(null); }}>+ Оплата</button>
+            {paid > 0 && inv.direction === 'outgoing' && (
+              <button className="btn btn--ghost btn--sm" title="Повернути кошти клієнту (створює транзакцію refund_out)"
+                onClick={() => {
+                  const sum = window.prompt('Сума повернення клієнту, грн:', String(paid));
+                  if (!sum) return;
+                  const amt = +sum.replace(',', '.');
+                  if (!(amt > 0)) { alert('Сума має бути > 0'); return; }
+                  const note = window.prompt('Причина повернення (необов\'язково):', '') || '';
+                  onRefund && onRefund(amt, note);
+                }}>↺ Повернення</button>
+            )}
             <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>ред.</button>
             <button className="btn-icon btn-icon--del" title="Видалити" onClick={() => window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id)}>✕</button>
           </div>
@@ -844,7 +855,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
 // ─── Головний компонент ─────────────────────────────────────────────
 const SalesView = () => {
   const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, addPayment, deleteInvoice,
-          clients, products, vatInvoices, addVatInvoice } = useData();
+          clients, products, vatInvoices, addVatInvoice, addTransaction } = useData();
   const { settings } = useSettings();
   const [direction, setDirection]   = useState('outgoing');
   const [addInv, setAddInv]         = useState(false);
@@ -973,6 +984,20 @@ const SalesView = () => {
                     sourceInvoiceNumber: inv.number,
                   });
                   updateAct(act.id, { taxInvoiceId: vatInv.id, taxInvoiceNumber: vatInv.number });
+                }}
+                onRefund={(refundAmount, note) => {
+                  addTransaction({
+                    date: new Date().toISOString().slice(0, 10),
+                    type: 'refund_out',
+                    counterparty: inv.clientName || '',
+                    amount: refundAmount,
+                    paymentMethod: 'bank',
+                    description: note || `Повернення за рах. №${inv.number}`,
+                    invoiceId: inv.id,
+                  });
+                  if (settings.isVatPayer) {
+                    alert('Транзакцію повернення створено. Для платника ПДВ додатково сформуйте РК до ПН у розділі «ПДВ».');
+                  }
                 }}
                 isVatPayer={settings.isVatPayer}
                 productOptions={productOptions}

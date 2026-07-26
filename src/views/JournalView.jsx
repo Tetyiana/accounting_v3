@@ -281,6 +281,8 @@ const JournalView = () => {
         <div className="toolbar-actions">
           <button className="btn btn--success" onClick={() => openForm('income')}>+ Надходження</button>
           <button className="btn btn--danger"  onClick={() => openForm('expense')}>− Списання</button>
+          <button className="btn btn--ghost"   onClick={() => openForm('refund_out')} title="Повернення коштів клієнту (зменшує дохід)">↺ Повернення клієнту</button>
+          <button className="btn btn--ghost"   onClick={() => openForm('refund_in')} title="Повернення коштів від постачальника (не є доходом)">↻ Повернення від постачальника</button>
           <button className="btn btn--ghost"   onClick={openUpload}>⇪ Завантажити з файлу</button>
           <button className="btn btn--ghost"   onClick={() => statementRef.current?.click()}>⇪ Імпорт виписки (CSV/MT940)</button>
           <button className="btn btn--ghost"   onClick={handlePrintJournalOrder} title="Друк журналу-ордера за поточним фільтром">⇩ Журнал-ордер</button>
@@ -325,7 +327,12 @@ const JournalView = () => {
       {showForm && !uploadMode && (
         <div className="inline-form">
           <div className="inline-form-header">
-            <span>{editId ? 'Редагування операції' : (opType === 'income' ? 'Нове надходження' : 'Нове списання')}</span>
+            <span>{editId ? 'Редагування операції' : (
+              opType === 'income'      ? 'Нове надходження' :
+              opType === 'expense'     ? 'Нове списання' :
+              opType === 'refund_out'  ? 'Повернення коштів клієнту' :
+              opType === 'refund_in'   ? 'Повернення від постачальника' : 'Нова операція'
+            )}</span>
             <button className="btn-close" onClick={() => setShowForm(false)}>✕</button>
           </div>
           {err && <div className="form-error">{err}</div>}

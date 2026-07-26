@@ -149,6 +149,35 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
         });
       });
 
+    // 3) Повернення коштів клієнту — зменшують дохід за касовим методом
+    transactions
+      .filter(t => t.type === 'refund_out')
+      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
+      .forEach(t => {
+        const amt = +t.amount || 0;
+        if (amt <= 0) return;
+        const method = t.paymentMethod || 'bank';
+        entries.push({
+          id:     `rf_${t.id}`,
+          num:    num++,
+          date:   t.date,
+          docRef: `Повернення: ${t.counterparty || ''}${t.description ? ' — ' + t.description : ''}`,
+          sourceId: t.id,
+          sourceType: 'refund',
+          cash:      method === 'cash' ? -amt : 0,
+          bank:      method === 'bank' ? -amt : 0,
+          acquiring: method === 'acquiring' ? -amt : 0,
+          other:     0,
+          income:    -amt,          // зменшує дохід
+          expense:   0, vatOblig: 0,
+          expenseDoc: 0, expenseNoDoc: 0, totalExpense: 0, netIncome: -amt,
+          note:      t.description || '',
+          isReturn:  true,
+        });
+      });
+    // refund_in (повернення від постачальника) у КДВ НЕ потрапляє —
+    // це не дохід, а повернення власних коштів
+
   } else {
     // Загальна система: перша подія
     const processed = new Set();

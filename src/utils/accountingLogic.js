@@ -11,10 +11,13 @@ export const calculateRunningBalance = (transactions) => {
 export const LEDGER_ACCOUNTS = {
   '301': 'Каса',
   '311': 'Банківський рахунок',
+  '361': 'Розрахунки з покупцями',
+  '631': 'Розрахунки з постачальниками',
   '641': 'Розрахунки за податками',
   '651': 'Розрахунки за ЄСВ',
   '661': 'Розрахунки з оплати праці',
   '701': 'Доход від реалізації',
+  '704': 'Вирахування з доходу',
   '84':  'Інші операційні витрати',
 };
 
@@ -25,6 +28,7 @@ const BUDGET_ESV_RE  = /пфу|пенсійн/i;
 // Формує спрощені бухгалтерські проводки (Дт/Кт) на основі операцій журналу.
 // Касовий метод: доходи/витрати визнаються по факту руху коштів — без рахунку 361/631,
 // що відповідає практиці обліку ФОП на спрощеній системі.
+// Виняток — повернення: refund_out (Дт 704 — Кт 311/301), refund_in (Дт 311/301 — Кт 631).
 export const buildLedgerEntries = (transactions = []) => {
   const sorted = [...transactions].sort((a, b) => (a.date||'').localeCompare(b.date||''));
 
@@ -33,7 +37,15 @@ export const buildLedgerEntries = (transactions = []) => {
     const cashAcc  = t.paymentMethod === 'cash' ? acc('301') : acc('311');
     let debit, credit;
 
-    if (t.type === 'income') {
+    if (t.type === 'refund_out') {
+      // Повернення клієнту: Дт 704 (вирахування з доходу) — Кт каса/банк
+      debit  = acc('704');
+      credit = cashAcc;
+    } else if (t.type === 'refund_in') {
+      // Повернення від постачальника: Дт каса/банк — Кт 631
+      debit  = cashAcc;
+      credit = acc('631');
+    } else if (t.type === 'income') {
       debit  = cashAcc;
       credit = acc('701');
     } else {
