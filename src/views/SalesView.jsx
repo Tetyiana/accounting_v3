@@ -44,18 +44,16 @@ const docHeaderHtml = (activeFop, mainIban) => `
   </tr>
 </table>`;
 
-const docSignatureHtml = (activeFop, facsimileHtml) => `
+const docSignatureHtml = (activeFop) => `
 <div class="sig">
-  <div>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>___________________________<br><small>(підпис)</small></div>
+  <div>ФОП ${activeFop?.fullName||''}<br><div id="fax-slot"></div>___________________________<br><small>(підпис)</small></div>
   <div style="text-align:right">М.П.</div>
 </div>`;
 
 // Друк рахунку (нового або вже збереженого)
 const buildInvoiceHtml = (inv, activeFop, settings) => {
   const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
-  const facsimileHtml = activeFop?.facsimile
-    ? `<img src="${activeFop.facsimile}" style="max-height:70px; max-width:180px; display:block; margin-top:10px">`
-    : '';
+  // Факсиміле накладається через openPrintWindow за галочкою «з факсиміле»
   const totalsNow = calcDocTotals(inv.items || []);
 
   const itemRows = (inv.items || []).map((it, i) => {
@@ -98,7 +96,7 @@ ${docHeaderHtml(activeFop, mainIban)}
     `}
   </tfoot>
 </table>
-${docSignatureHtml(activeFop, facsimileHtml)}
+${docSignatureHtml(activeFop)}
 <script>window.onload=()=>window.print()</script>
 </body></html>`;
 };
@@ -106,9 +104,7 @@ ${docSignatureHtml(activeFop, facsimileHtml)}
 // Друк акту / накладної
 const buildActHtml = (act, activeFop, settings) => {
   const mainIban = activeFop?.bankAccounts?.find(a => a.isMain) || activeFop?.bankAccounts?.[0];
-  const facsimileHtml = activeFop?.facsimile
-    ? `<img src="${activeFop.facsimile}" style="max-height:70px; max-width:180px; display:block; margin-top:10px">`
-    : '';
+  // Факсиміле накладається через openPrintWindow за галочкою «з факсиміле»
   const totalsNow = calcDocTotals(act.items || []);
   const docLabel = ACT_TYPES.find(t => t.id === act.type)?.label || 'Акт';
   const isDeliveryNote = act.type === 'delivery_note';
@@ -165,7 +161,7 @@ ${act.invoiceNumber ? `<p>Підстава: рахунок №${act.invoiceNumbe
 ${isDeliveryNote ? `
 <div class="sig">
   <div>
-    <b>Відпустив:</b><br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>
+    <b>Відпустив:</b><br>ФОП ${activeFop?.fullName||''}<br><div id="fax-slot"></div>
     ___________________________<br><small>(підпис)</small>
   </div>
   <div>
@@ -178,7 +174,7 @@ ${isDeliveryNote ? `
 <p>Роботи (послуги) виконано в повному обсязі, у визначений термін. Замовник претензій щодо обсягу, якості та строків виконання робіт (надання послуг) не має.</p>
 <div class="sig">
   <div>
-    <b>Виконавець:</b><br>ФОП ${activeFop?.fullName||''}<br>${facsimileHtml}<br>
+    <b>Виконавець:</b><br>ФОП ${activeFop?.fullName||''}<br><div id="fax-slot"></div>
     ___________________________<br><small>(підпис)</small>
   </div>
   <div>
