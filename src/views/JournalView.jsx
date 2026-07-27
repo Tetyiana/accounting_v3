@@ -64,11 +64,12 @@ ${section('Банк / еквайринг', bankRows)}
 };
 
 const JournalView = () => {
-  const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment } = useData();
+  const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment, contracts } = useData();
   const { activeFop } = useFop();
   const [showForm, setShowForm]   = useState(false);
   const [editId, setEditId]       = useState(null);
   const [linkInvoiceId, setLinkInvoiceId] = useState('');
+  const [linkContractId, setLinkContractId] = useState('');
   const [opType, setOpType]       = useState('income');
   const [form, setForm]           = useState(EMPTY);
   const [filter, setFilter]       = useState({ dateStart: '', dateEnd: '', counterparty: '', amountMin: '', amountMax: '', opKind: '' });
@@ -95,12 +96,19 @@ const JournalView = () => {
     const dir = opType === 'income' ? 'outgoing' : 'incoming';
     return invoices
       .filter(i => i.direction === dir && i.status !== 'cancelled')
+      .filter(i => !linkContractId || i.contractId === linkContractId)
       .map(i => {
         const paid = payments.filter(p => p.invoiceId === i.id).reduce((s, p) => s + (+p.amount || 0), 0);
         return { ...i, remaining: (+i.total || 0) - paid };
       })
       .filter(i => i.remaining > 0.009);
-  }, [invoices, payments, opType]);
+  }, [invoices, payments, opType, linkContractId]);
+
+  // Активні договори з цим контрагентом
+  const relevantContracts = useMemo(() =>
+    contracts.filter(c => c.status === 'active' &&
+      (!form.counterparty || (c.counterpartyName || '').toLowerCase().includes(form.counterparty.toLowerCase()))),
+  [contracts, form.counterparty]);
 
   const handleSave = () => {
     if (!form.counterparty || !form.amount || !form.date) { setErr('Заповніть обов\'язкові поля'); return; }
@@ -117,9 +125,13 @@ const JournalView = () => {
           date: form.date, amount: +form.amount,
           direction: inv.direction, paymentMethod: form.paymentMethod || 'bank',
           counterparty: form.counterparty, notes: form.description,
+          contractId: linkContractId || inv.contractId || null,
         }, { invoice: inv });
       } else {
-        addTransaction({ ...form, type: opType });
+        addTransaction({
+          ...form, type: opType,
+          contractId: linkContractId || null,
+        });
       }
       // Баг 5: контрагент автоматично в довідник (якщо ще немає)
       const name = form.counterparty.trim();
@@ -128,6 +140,7 @@ const JournalView = () => {
       }
     }
     setLinkInvoiceId('');
+    setLinkContractId('');
     setShowForm(false);
     setErr('');
   };
@@ -361,6 +374,19 @@ const JournalView = () => {
                 <option value="acquiring">Еквайринг</option>
               </select>
             </div>
+            {!editId && relevantContracts.length > 0 && (opType === 'income' || opType === 'expense') && (
+              <div className="field">
+                <label>Договір (опційно)</label>
+                <select value={linkContractId} onChange={e => { setLinkContractId(e.target.value); setLinkInvoiceId(''); }}>
+                  <option value="">— без договору —</option>
+                  {relevantContracts.map(c => (
+                    <option key={c.id} value={c.id}>
+                      №{c.number} · {c.counterpartyName}{c.subject ? ` — ${c.subject.slice(0, 40)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {!editId && unpaidInvoices.length > 0 && (
               <div className="field">
                 <label>Закрити рахунок (опційно)</label>

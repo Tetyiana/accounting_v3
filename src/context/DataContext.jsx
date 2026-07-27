@@ -40,6 +40,7 @@ export const DataProvider = ({ fopId, children }) => {
   const [clients,        setClients]        = useState([]);
   const [products,       setProducts]       = useState([]);
   const [trash,          setTrash]          = useState([]);
+  const [contracts,      setContracts]      = useState([]);
   const [loading,        setLoading]        = useState(true);
 
   useEffect(() => {
@@ -60,7 +61,8 @@ export const DataProvider = ({ fopId, children }) => {
       dbSelect('clients',         { fopId }),
       dbSelect('products',        { fopId }),
       dbSelect('trash',           { fopId }),
-    ]).then(([tx, mv, db_, vat, inv, ac, pay, emp, pr, lv, hro, cl, prod, tr]) => {
+      dbSelect('contracts',       { fopId }),
+    ]).then(([tx, mv, db_, vat, inv, ac, pay, emp, pr, lv, hro, cl, prod, tr, contr]) => {
       if (!alive) return;
       setTransactions(tx);
       setMovements(mv);
@@ -76,6 +78,7 @@ export const DataProvider = ({ fopId, children }) => {
       setClients(cl);
       setProducts(prod);
       setTrash(tr.map(trashFromRow));
+      setContracts(contr);
       setLoading(false);
     });
     return () => { alive = false; };
@@ -427,6 +430,21 @@ export const DataProvider = ({ fopId, children }) => {
     dbDelete('clients', id);
   }, []);
 
+  // ─── Договори ────────────────────────────────────────────────
+  const addContract = useCallback((c) => {
+    const item = { ...mk(), ...c, id: newId(), fopId };
+    setContracts(p => [...p, item]); dbInsert('contracts', item);
+    return item;
+  }, [fopId, mk]);
+  const updateContract = useCallback((id, patch) => {
+    setContracts(p => p.map(c => c.id === id ? { ...c, ...patch } : c));
+    dbUpdate('contracts', id, stripMeta(patch));
+  }, []);
+  const deleteContract = useCallback((id) => {
+    setContracts(p => p.filter(c => c.id !== id));
+    dbDelete('contracts', id);
+  }, []);
+
   const addProduct = useCallback((pr) => {
     const item = { ...mk(), ...pr, id: newId(), fopId };
     setProducts(p => [...p, item]); dbInsert('products', item);
@@ -536,6 +554,7 @@ export const DataProvider = ({ fopId, children }) => {
       leaveRecords,  addLeaveRecord,    deleteLeaveRecord,
       hrOrders,      addHrOrder,        deleteHrOrder,
       clients,       addClient,   updateClient,   deleteClient,
+      contracts,     addContract, updateContract, deleteContract,
       products,      addProduct,  updateProduct,  deleteProduct,
       trash,         restoreFromTrash,  purgeFromTrash, purgeAllTrash,
       exportBackup,  importBackup,

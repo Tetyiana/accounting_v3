@@ -22,6 +22,7 @@ import SettingsView  from '../../views/SettingsView';
 import TrashView     from '../../views/TrashView';
 import PayrollView   from '../../views/PayrollView';
 import FopProfileView from '../../views/FopProfileView';
+import ContractsView from '../../views/ContractsView';
 import HelpView from '../../views/HelpView';
 import SupportView from '../../views/SupportView';
 
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'home',      label: 'Головна',           icon: '⌂', group: 'main' },
   { id: 'journal',   label: 'Банк / Каса',            icon: '₴', group: 'main' },
   { id: 'sales',       label: 'Продажі/Закупівлі',  icon: '🗒', group: 'main' },
+  { id: 'contracts',   label: 'Договори',            icon: '📄', group: 'main' },
   { id: 'debtors',     label: 'Дебітори/Кредитори', icon: '⇄', group: 'main' },
   { id: 'registry',    label: 'Книга КОГО',          icon: '📒', group: 'main' },
   { id: 'directories', label: 'Довідники',           icon: '📋', group: 'main' },
@@ -74,6 +76,7 @@ const VIEWS = {
   accounting:()     => <AccountingView />,
   dps:       ()     => <DpsView />,
   pricing:   ()     => <PricingView />,
+  contracts: ()     => <ContractsView />,
   help:      ()     => <HelpView />,
   support:   ()     => <SupportView />,
 };
