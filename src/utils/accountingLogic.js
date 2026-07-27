@@ -7,57 +7,65 @@ export const calculateRunningBalance = (transactions) => {
   });
 };
 
-// ─── Спрощений план рахунків для ФОП ─────────────────────────────────
+// ─── Спрощений план рахунків (наказ Мінфіну від 19.04.2001 №186) ─────
+// Двозначні коди — придатні для ФОП і малих ЮО, що обрали спрощений облік.
 export const LEDGER_ACCOUNTS = {
-  '301': 'Каса',
-  '311': 'Банківський рахунок',
-  '361': 'Розрахунки з покупцями',
-  '631': 'Розрахунки з постачальниками',
-  '641': 'Розрахунки за податками',
-  '651': 'Розрахунки за ЄСВ',
-  '661': 'Розрахунки з оплати праці',
-  '701': 'Доход від реалізації',
-  '704': 'Вирахування з доходу',
-  '84':  'Інші операційні витрати',
+  '30': 'Готівка',
+  '31': 'Рахунки в банках',
+  '36': 'Розрахунки з покупцями',
+  '37': 'Розрахунки з різними дебіторами',
+  '64': 'Розрахунки за податками',
+  '65': 'Розрахунки за страхуванням (ЄСВ)',
+  '66': 'Розрахунки з оплати праці',
+  '68': 'Розрахунки за іншими операціями',
+  '70': 'Дохід від реалізації',
+  '74': 'Інші доходи',
+  '79': 'Фінансові результати',
+  '84': 'Витрати',
 };
 
 const acc = (code) => ({ code, label: LEDGER_ACCOUNTS[code] || code });
 const BUDGET_TAX_RE  = /дпс|казначей/i;
 const BUDGET_ESV_RE  = /пфу|пенсійн/i;
 
-// Формує спрощені бухгалтерські проводки (Дт/Кт) на основі операцій журналу.
-// Касовий метод: доходи/витрати визнаються по факту руху коштів — без рахунку 361/631,
-// що відповідає практиці обліку ФОП на спрощеній системі.
-// Виняток — повернення: refund_out (Дт 704 — Кт 311/301), refund_in (Дт 311/301 — Кт 631).
+// Проводки за спрощеним планом, касовий метод:
+//   income                     → Дт 30/31 — Кт 70   (виручка)
+//   expense (звичайна)         → Дт 84   — Кт 30/31
+//   expense (зарплата)         → Дт 66   — Кт 30/31
+//   expense (податки)          → Дт 64/65 — Кт 30/31
+//   refund_out (клієнту)       → Дт 70   — Кт 30/31 (сторно доходу)
+//   refund_in (від пост.)      → Дт 30/31 — Кт 68
+//   non_income (не дохід)      → Дт 30/31 — Кт 68
 export const buildLedgerEntries = (transactions = []) => {
   const sorted = [...transactions].sort((a, b) => (a.date||'').localeCompare(b.date||''));
 
   return sorted.map(t => {
     const amount   = +t.amount || 0;
-    const cashAcc  = t.paymentMethod === 'cash' ? acc('301') : acc('311');
+    const cashAcc  = t.paymentMethod === 'cash' ? acc('30') : acc('31');
     let debit, credit;
 
     if (t.type === 'refund_out') {
-      // Повернення клієнту: Дт 704 (вирахування з доходу) — Кт каса/банк
-      debit  = acc('704');
+      debit  = acc('70');
       credit = cashAcc;
     } else if (t.type === 'refund_in') {
-      // Повернення від постачальника: Дт каса/банк — Кт 631
       debit  = cashAcc;
-      credit = acc('631');
+      credit = acc('68');
+    } else if (t.type === 'non_income') {
+      debit  = cashAcc;
+      credit = acc('68');
     } else if (t.type === 'income') {
       debit  = cashAcc;
-      credit = acc('701');
+      credit = acc('70');
     } else {
       // Витрата
       if (t.payrollRecordId) {
-        if (BUDGET_TAX_RE.test(t.counterparty||'')) debit = acc('641');
-        else if (BUDGET_ESV_RE.test(t.counterparty||'')) debit = acc('651');
-        else debit = acc('661'); // виплата з/п на руки
+        if (BUDGET_TAX_RE.test(t.counterparty||'')) debit = acc('64');
+        else if (BUDGET_ESV_RE.test(t.counterparty||'')) debit = acc('65');
+        else debit = acc('66');
       } else if (BUDGET_TAX_RE.test(t.counterparty||'')) {
-        debit = acc('641');
+        debit = acc('64');
       } else if (BUDGET_ESV_RE.test(t.counterparty||'')) {
-        debit = acc('651');
+        debit = acc('65');
       } else {
         debit = acc('84');
       }

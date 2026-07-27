@@ -18,7 +18,7 @@ const AccountingView = () => {
   const [tab, setTab] = useState('chess');
   const [dateStart, setDateStart] = useState(monthAgo());
   const [dateEnd, setDateEnd] = useState(new Date().toISOString().slice(0, 10));
-  const [selAcc, setSelAcc] = useState('311');
+  const [selAcc, setSelAcc] = useState('31');
 
   const entries = useMemo(() => buildLedgerEntries(transactions)
     .filter(e => (!dateStart || e.date >= dateStart) && (!dateEnd || e.date <= dateEnd)),
@@ -78,8 +78,8 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
 <table><thead><tr><th>Дата</th><th>Контрагент</th><th>Зміст</th><th>Дт</th><th>Кт</th><th align="right">Сума, грн</th></tr></thead>
 <tbody>${accEntries.map(e => `<tr><td>${e.date}</td><td>${e.counterparty}</td><td>${e.description}</td>
 <td>${e.debit.code}</td><td>${e.credit.code}</td><td align="right">${fmtMoney(e.amount)}</td></tr>`).join('')}
-<tr><td colspan="5"><b>Оборот Дт ${selAcc}</b></td><td align="right"><b>${fmtMoney(accTotals.debit)}</b></td></tr>
-<tr><td colspan="5"><b>Оборот Кт ${selAcc}</b></td><td align="right"><b>${fmtMoney(accTotals.credit)}</b></td></tr>
+<tr><td colspan="5" align="right"><b>Оборот по дебету рахунка ${selAcc}:</b></td><td align="right"><b>${fmtMoney(accTotals.debit)}</b></td></tr>
+<tr><td colspan="5" align="right"><b>Оборот по кредиту рахунка ${selAcc}:</b></td><td align="right"><b>${fmtMoney(accTotals.credit)}</b></td></tr>
 </tbody></table></body></html>`;
     openPrintWindow(html, { fop: activeFop });
   };
@@ -163,8 +163,14 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
                   <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(e.amount)}</td>
                 </tr>
               ))}
-              <tr><td colSpan={5} style={{ fontWeight: 700 }}>Оборот Дт {selAcc} / Кт {selAcc}</td>
-                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(accTotals.debit)} / {fmtMoney(accTotals.credit)}</td></tr>
+              <tr>
+                <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Оборот по дебету рахунка {selAcc}:</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(accTotals.debit)}</td>
+              </tr>
+              <tr>
+                <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Оборот по кредиту рахунка {selAcc}:</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(accTotals.credit)}</td>
+              </tr>
             </tbody>
           </table>
         </div>

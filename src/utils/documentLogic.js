@@ -176,7 +176,35 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
         });
       });
     // refund_in (повернення від постачальника) у КДВ НЕ потрапляє —
-    // це не дохід, а повернення власних коштів
+    // це не дохід, а повернення власних коштів.
+    // non_income (власні кошти, позика, переказ між рахунками) — теж не дохід.
+    // Виняток: поворотна фінансова допомога, не повернена протягом 365 днів,
+    // включається до доходу з дати спливу цього терміну (пп. 165.1.31 ПКУ).
+    const today = new Date().toISOString().slice(0, 10);
+    transactions
+      .filter(t => t.type === 'non_income' && t.nonIncomeCategory === 'fin_aid_returnable' && !t.matDopReturned)
+      .forEach(t => {
+        const receivedDate = new Date(t.date);
+        const dueDate = new Date(receivedDate);
+        dueDate.setDate(dueDate.getDate() + 365);
+        const dueDateStr = dueDate.toISOString().slice(0, 10);
+        if (dueDateStr > today) return; // ще не минуло 365 днів
+        const amt = +t.amount || 0;
+        entries.push({
+          id:     `matdop_${t.id}`,
+          num:    num++,
+          date:   dueDateStr,
+          docRef: `Мат.допомога від ${t.counterparty || ''} (365 днів минуло — включається в дохід)`,
+          sourceId: t.id,
+          sourceType: 'mat_dop_included',
+          cash: 0, bank: 0, acquiring: 0, other: amt,
+          income: amt,
+          expense: 0, vatOblig: 0,
+          expenseDoc: 0, expenseNoDoc: 0, totalExpense: 0, netIncome: amt,
+          note: `Отримано ${t.date}. Не повернено протягом року → пп. 165.1.31 ПКУ`,
+          isReturn: false,
+        });
+      });
 
   } else {
     // Загальна система: перша подія

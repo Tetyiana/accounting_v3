@@ -506,11 +506,11 @@ const InvoiceForm = ({ initial, direction, onSave, onCancel, invoiceList, client
 };
 
 // ─── Форма акту / накладної ─────────────────────────────────────────
-const ActForm = ({ invoice, onSave, onCancel, actList, forcedType }) => {
+const ActForm = ({ invoice, initial, onSave, onCancel, actList, forcedType }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
-  const inferredType = forcedType || inferDocType(invoice.items);
-  const [form, setForm] = useState({
+  const inferredType = initial?.type || forcedType || inferDocType(invoice.items);
+  const [form, setForm] = useState(initial ? { ...initial } : {
     ...EMPTY_ACT,
     invoiceId:  invoice.id,
     direction:  invoice.direction,
@@ -659,11 +659,12 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
+const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct, onDeleteAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
-  const [addActType, setAddActType] = useState(null); // null | 'act' | 'delivery_note'
+  const [addActType, setAddActType] = useState(null);
+  const [editAct, setEditAct] = useState(null);
   const [addPay, setAddPay] = useState(false);
 
   const status = calcInvoiceStatus(inv, invPayments);
@@ -780,7 +781,13 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
                             </select>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(act.total)}</td>
-                          <td><button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>⇩ PDF</button></td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>🖨</button>
+                            <button className="btn btn--ghost btn--sm" title="Редагувати"
+                              onClick={() => setEditAct(act)}>ред.</button>
+                            <button className="btn-icon btn-icon--del" title="Видалити"
+                              onClick={() => window.confirm('Видалити акт/накладну?') && onDeleteAct && onDeleteAct(act.id)}>✕</button>
+                          </td>
                           {isVatPayer && (
                             <td>
                               {act.taxInvoiceId ? (
@@ -804,6 +811,16 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
                   forcedType={addActType}
                   onSave={(act) => { onAddAct(act); setAddActType(null); }}
                   onCancel={() => setAddActType(null)}
+                />
+              )}
+
+              {editAct && (
+                <ActForm
+                  invoice={inv}
+                  initial={editAct}
+                  actList={allActs}
+                  onSave={(act) => { onUpdateAct && onUpdateAct(editAct.id, act); setEditAct(null); }}
+                  onCancel={() => setEditAct(null)}
                 />
               )}
 
@@ -854,7 +871,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateActS
 
 // ─── Головний компонент ─────────────────────────────────────────────
 const SalesView = () => {
-  const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, addPayment, deleteInvoice,
+  const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, deleteAct, addPayment, deleteInvoice,
           clients, products, vatInvoices, addVatInvoice, addTransaction } = useData();
   const { settings } = useSettings();
   const [direction, setDirection]   = useState('outgoing');
@@ -967,6 +984,8 @@ const SalesView = () => {
                 invActs={acts.filter(a => a.invoiceId === inv.id)}
                 invPayments={payments.filter(p => p.invoiceId === inv.id)}
                 onAddAct={(act)     => addAct(act)}
+                onUpdateAct={(id, patch) => updateAct(id, patch)}
+                onDeleteAct={(id) => deleteAct(id)}
                 onUpdateActStatus={(id, newStatus) => updateAct(id, { status: newStatus })}
                 onAddPayment={(pay, inv) => addPayment(pay, { invoice: inv })}
                 onDelete={deleteInvoice}
