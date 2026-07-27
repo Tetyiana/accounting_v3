@@ -93,9 +93,10 @@ const ProductForm = ({ initial, onSave, onCancel }) => {
         </div>
         <div className="field">
           <label>Одиниця</label>
-          <select name="unit" value={form.unit} onChange={set}>
-            {UNITS.map(u => <option key={u}>{u}</option>)}
-          </select>
+          <input name="unit" list="units-list-dir" value={form.unit} onChange={set} placeholder="шт, флакон, послуга…" />
+          <datalist id="units-list-dir">
+            {UNITS.map(u => <option key={u} value={u} />)}
+          </datalist>
         </div>
         <div className="field">
           <label>Ціна, грн</label>

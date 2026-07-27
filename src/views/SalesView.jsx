@@ -311,6 +311,9 @@ const ItemsTable = ({ items, onChange, vatEnabled, productOptions = [] }) => {
 
   return (
     <div className="table-wrap" style={{ marginBottom: 8 }}>
+      <datalist id="units-list">
+        {UNITS.map(u => <option key={u} value={u} />)}
+      </datalist>
       <table className="data-table">
         <thead>
           <tr>
@@ -343,10 +346,9 @@ const ItemsTable = ({ items, onChange, vatEnabled, productOptions = [] }) => {
                     onChange={e => setItem(idx, 'qty', e.target.value)} />
                 </td>
                 <td>
-                  <select className="table-input" value={it.unit}
-                    onChange={e => setItem(idx, 'unit', e.target.value)}>
-                    {UNITS.map(u => <option key={u}>{u}</option>)}
-                  </select>
+                  <input className="table-input" list="units-list" value={it.unit || ''}
+                    onChange={e => setItem(idx, 'unit', e.target.value)}
+                    placeholder="од." />
                 </td>
                 <td>
                   <input className="table-input table-input--right" type="number"
