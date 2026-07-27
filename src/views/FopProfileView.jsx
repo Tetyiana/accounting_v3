@@ -274,7 +274,12 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
             <FopDocumentsSection
               fopId={form.id}
               fop={form}
-              onFopChanged={patch => setForm(p => ({ ...p, ...patch }))}
+              onFopChanged={patch => {
+                setForm(p => ({ ...p, ...patch }));
+                // Критично: оновити і контекст, інакше друк не побачить факсиміле
+                // до перезавантаження сторінки
+                if (form.id) updateFop(form.id, patch);
+              }}
             />
           )}
           {section === 'docs' && !form.id && (

@@ -6,28 +6,36 @@
 
 import { supabase } from '../lib/supabase';
 
-const buildBar = (hasFax) => `
+const buildBar = (hasFax, faxError) => `
 <div class="no-print" style="position:sticky;top:0;background:#0d3b33;padding:10px 14px;z-index:999;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
   <button onclick="window.close()" style="background:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:15px;cursor:pointer">← Закрити</button>
   <button onclick="window.print()" style="background:#4ade80;border:none;border-radius:8px;padding:10px 18px;font-size:15px;cursor:pointer">🖨 Друк</button>
   ${hasFax ? `<label style="color:#fff;margin-left:8px;cursor:pointer;user-select:none">
     <input type="checkbox" id="fax-toggle" checked style="width:16px;height:16px;vertical-align:middle;margin-right:6px">
     з факсиміле
-  </label>` : ''}
+  </label>` : `<span style="color:#ffb4a2;margin-left:8px;font-size:13px">
+    ${faxError
+      ? 'Факсиміле недоступне: ' + faxError + ' (перевірте, чи виконано migration_007)'
+      : 'Факсиміле не завантажене — Профіль ФОП → Документи і факсиміле'}
+  </span>`}
 </div>
 <style>@media print{.no-print{display:none!important}}</style>`;
 
 const getFacsimileUrls = async (fop) => {
-  const out = { stamp: null, sign: null };
+  const out = { stamp: null, sign: null, error: null };
   if (!fop) return out;
   const pairs = [];
   if (fop.signaturePath) pairs.push(['sign', fop.signaturePath]);
   if (fop.stampPath)     pairs.push(['stamp', fop.stampPath]);
   for (const [k, p] of pairs) {
     try {
-      const { data } = await supabase.storage.from('files').createSignedUrl(p, 3600);
+      const { data, error } = await supabase.storage.from('files').createSignedUrl(p, 3600);
+      if (error) throw error;
       if (data?.signedUrl) out[k] = data.signedUrl;
-    } catch (_) { /* ignore */ }
+    } catch (e) {
+      console.error('Факсиміле недоступне:', p, e);
+      out.error = e.message || String(e);
+    }
   }
   return out;
 };
@@ -52,7 +60,7 @@ export const openPrintWindow = async (html, { fop } = {}) => {
     }
   }
 
-  const bar = buildBar(hasFax);
+  const bar = buildBar(hasFax, fax.error);
   const withBar = processed.includes('<body>')
     ? processed.replace('<body>', '<body>' + bar)
     : bar + processed;
