@@ -3,7 +3,9 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
-  base: '/accounting_v3/',
+  // На Cloudflare Pages сайт у корені, на GitHub Pages — у підпапці репо.
+  // CF_PAGES виставляється самим Cloudflare під час збірки.
+  base: process.env.CF_PAGES ? '/' : '/accounting_v3/',
   plugins: [
     react(),
     VitePWA({
