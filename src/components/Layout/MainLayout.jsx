@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { pendingCount, flushPending } from '../../lib/db';
 import { useAuth } from '../../context/AuthContext';
 import { useSettings } from '../../context/SettingsContext';
 import { useFop } from '../../context/FopContext';
@@ -25,6 +26,36 @@ import FopProfileView from '../../views/FopProfileView';
 import ContractsView from '../../views/ContractsView';
 import HelpView from '../../views/HelpView';
 import SupportView from '../../views/SupportView';
+
+// Індикатор незбережених записів. З'являється тільки коли черга не порожня.
+const PendingBadge = () => {
+  const [n, setN] = useState(pendingCount());
+
+  useEffect(() => {
+    const tick = () => setN(pendingCount());
+    const id = setInterval(tick, 5000);
+    window.addEventListener('online', tick);
+    return () => { clearInterval(id); window.removeEventListener('online', tick); };
+  }, []);
+
+  if (n === 0) return null;
+
+  const retry = async () => {
+    const done = await flushPending();
+    setN(pendingCount());
+    if (done > 0) window.location.reload();
+  };
+
+  return (
+    <button
+      className="btn btn--sm"
+      style={{ background: '#c0392b', color: '#fff', marginRight: 8 }}
+      title="Ці записи ще не потрапили в базу. Натисніть, щоб спробувати зберегти."
+      onClick={retry}>
+      ⚠ Не збережено: {n}
+    </button>
+  );
+};
 
 const TABS = [
   { id: 'home',      label: 'Головна',           icon: '⌂', group: 'main' },
@@ -185,8 +216,10 @@ const MainLayout = () => {
           </div>
         </div>
 
-        <div className="header-right">
+          <div className="header-right">
+            <PendingBadge />
           <div className="user-badge">
+            
             <span className="user-avatar">{initials}</span>
             <span className="user-name">{user?.name}</span>
           </div>
