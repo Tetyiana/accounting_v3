@@ -426,9 +426,17 @@ export const DataProvider = ({ fopId, children }) => {
   }, []);
 
   const deleteClient = useCallback((id) => {
-    setClients(p => p.filter(c => c.id !== id));
+    setClients(p => {
+      const item = p.find(c => c.id === id);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'client', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]);
+        dbInsert('trash', trashToRow(t));
+      }
+      return p.filter(c => c.id !== id);
+    });
     dbDelete('clients', id);
-  }, []);
+  }, [fopId]);
 
   // ─── Договори ────────────────────────────────────────────────
   const addContract = useCallback((c) => {
@@ -441,9 +449,16 @@ export const DataProvider = ({ fopId, children }) => {
     dbUpdate('contracts', id, stripMeta(patch));
   }, []);
   const deleteContract = useCallback((id) => {
-    setContracts(p => p.filter(c => c.id !== id));
+    setContracts(p => {
+      const item = p.find(c => c.id === id);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'contract', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
+      return p.filter(c => c.id !== id);
+    });
     dbDelete('contracts', id);
-  }, []);
+  }, [fopId]);
 
   const addProduct = useCallback((pr) => {
     const item = { ...mk(), ...pr, id: newId(), fopId };
@@ -457,9 +472,16 @@ export const DataProvider = ({ fopId, children }) => {
   }, []);
 
   const deleteProduct = useCallback((id) => {
-    setProducts(p => p.filter(x => x.id !== id));
+    setProducts(p => {
+      const item = p.find(x => x.id === id);
+      if (item) {
+        const t = { id: newId(), fopId, kind: 'product', data: item, deletedAt: new Date().toISOString() };
+        setTrash(tr => [...tr, t]); dbInsert('trash', trashToRow(t));
+      }
+      return p.filter(x => x.id !== id);
+    });
     dbDelete('products', id);
-  }, []);
+  }, [fopId]);
 
   // ─── Кошик ──────────────────────────────────────────────────
   const restoreFromTrash = useCallback((trashId) => {
@@ -477,6 +499,9 @@ export const DataProvider = ({ fopId, children }) => {
       if (item.kind === 'payment')       reinsert(setPayments, 'payments');
       if (item.kind === 'employee')      reinsert(setEmployees, 'employees');
       if (item.kind === 'payrollRecord') reinsert(setPayrollRecords, 'payroll_records', payrollToRow(d));
+      if (item.kind === 'client')        reinsert(setClients, 'clients');
+      if (item.kind === 'product')       reinsert(setProducts, 'products');
+      if (item.kind === 'contract')      reinsert(setContracts, 'contracts');
       dbDelete('trash', trashId);
       return prev.filter(t => t.id !== trashId);
     });
