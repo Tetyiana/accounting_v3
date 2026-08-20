@@ -1,12 +1,12 @@
-# Пінгує Supabase кожні 3 дні, щоб безкоштовний проєкт
+# Пінгує Supabase кожні 2 дні, щоб безкоштовний проєкт
 # не ставився на паузу (пауза настає після 7 днів неактивності).
-# URL і publishable-ключ і так публічні (зашиті у src/lib/supabase.js) —
-# тримати їх у секретах не потрібно.
+# УВАГА: пінг здатен не дати заснути, але НЕ здатен розбудити.
+# Якщо крок впав — проєкт уже спить, треба будити руками в дашборді.
 name: Keep Supabase alive
 
 on:
   schedule:
-    - cron: '0 6 */3 * *'   # кожні 3 дні о 06:00 UTC
+    - cron: '0 6 */2 * *'   # кожні 2 дні о 06:00 UTC
   workflow_dispatch:          # можна запустити вручну для перевірки
 
 jobs:
@@ -18,15 +18,18 @@ jobs:
           SUPABASE_URL: https://ggsaaymebyotodpjjukb.supabase.co
           SUPABASE_KEY: sb_publishable_h-f0UaUZVyXjeD9Rj2T7-w_B97wydX1
         run: |
-          code=$(curl -s -o /tmp/body -w "%{http_code}" \
+          code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 30 \
             "$SUPABASE_URL/rest/v1/fops?select=id&limit=1" \
             -H "apikey: $SUPABASE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_KEY")
+            -H "Authorization: Bearer $SUPABASE_KEY") || {
+              echo "::error::Хост не відповідає — проєкт Supabase, найімовірніше, на паузі. Розбудити вручну в дашборді."
+              exit 1
+            }
           echo "HTTP $code"
           cat /tmp/body
           # 200 (ok) або 401/406 (RLS відхилив анонімний запит) — все одно
-          # рахується активністю і будить/тримає проєкт активним.
-          # Провал тільки при 5xx або мережевій помилці.
+          # рахується активністю і тримає проєкт живим.
           if [ "$code" -ge 500 ] || [ "$code" -lt 200 ]; then
-            echo "Supabase не відповідає"; exit 1
+            echo "::error::Supabase відповів $code"
+            exit 1
           fi
