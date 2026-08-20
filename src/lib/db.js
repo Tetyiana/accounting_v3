@@ -92,7 +92,8 @@ export const dbDelete = (table, id) => {
 export const dbSelect = async (table, filters = {}) => {
   let q = supabase.from(table).select('*');
   for (const [k, v] of Object.entries(filters)) q = q.eq(snake(k), v);
-  const { data, error } = await q.order('created_at', { ascending: true });
+    const sortCol = table === 'trash' ? 'deleted_at' : 'created_at';
+  const { data, error } = await q.order(sortCol, { ascending: true }); 
   if (error) { console.error(`[db] select ${table}:`, error.message); return []; }
   return (data || []).map(fromRow);
 };
