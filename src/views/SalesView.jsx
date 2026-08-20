@@ -661,7 +661,7 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
-const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct, onDeleteAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
+const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct, onDeleteAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onCopy, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const [open, setOpen] = useState(false);
@@ -743,6 +743,7 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct,
                 }}>↺ Повернення</button>
             )}
             <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>ред.</button>
+            <button className="btn btn--ghost btn--sm" title="Створити новий рахунок на основі цього" onClick={() => onCopy && onCopy(inv)}>копія</button>
             <button className="btn-icon btn-icon--del" title="Видалити" onClick={() => window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id)}>✕</button>
           </div>
         </td>
@@ -879,6 +880,7 @@ const SalesView = () => {
   const [direction, setDirection]   = useState('outgoing');
   const [addInv, setAddInv]         = useState(false);
   const [editInv, setEditInv]       = useState(null); // invoice obj for editing
+  const [copyInv, setCopyInv]       = useState(null); // джерело для копії (новий рахунок)
   const [filter, setFilter]         = useState({ search: '', status: '' });
 
   // Опції для автодоповнення
@@ -951,6 +953,17 @@ const SalesView = () => {
           onCancel={() => setEditInv(null)}
         />
       )}
+            {copyInv && (
+        <InvoiceForm
+          initial={copyInv}
+          direction={copyInv.direction || direction}
+          invoiceList={invoices}
+          clientOptions={clientOptions}
+          productOptions={productOptions}
+          onSave={(inv) => { addInvoice(inv); setCopyInv(null); }}
+          onCancel={() => setCopyInv(null)}
+        />
+      )}
 
       <div className="filters-bar">
         <input placeholder="Пошук по контрагенту або №" value={filter.search}
@@ -992,6 +1005,14 @@ const SalesView = () => {
                 onAddPayment={(pay, inv) => addPayment(pay, { invoice: inv })}
                 onDelete={deleteInvoice}
                 onEdit={(inv) => { setEditInv(inv); setAddInv(false); }}
+                onCopy={(src) => {
+                  // Копія: позиції й контрагент переносяться, номер і дата — нові,
+                  // статус і оплати не копіюються (це новий, ще не оплачений рахунок).
+                  const { id, number, date, createdAt, status, paidAmount, ...rest } = src;
+                  setCopyInv({ ...rest, date: new Date().toISOString().slice(0, 10) });
+                  setEditInv(null);
+                  setAddInv(false);
+                }}
                 onUpdateStatus={(id, newStatus) => updateInvoice(id, { status: newStatus })}
                 onGenerateTaxInvoice={(act) => {
                   const num = mkVatNum(vatInvoices, act.date);
