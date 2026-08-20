@@ -1141,3 +1141,59 @@ body { font-size: 1rem; }
 .data-table .filter-row input + input,
 .data-table .filter-row input + select,
 .data-table .filter-row select + input { margin-top: 4px; }
+/* ─── Дерево документів у Продажах ───────────────────────────── */
+.doc-row--parent > td { border-top: 2px solid var(--mint-300, #cfe6dd); font-weight: 500; }
+.doc-row--parent:hover > td { background: var(--mint-050, #f3faf7); }
+.doc-row--child > td { padding-top: 6px; padding-bottom: 6px; background: #fbfdfc; }
+.doc-row--child:hover > td { background: #f3faf7; }
+
+.doc-cell-name { white-space: nowrap; }
+.doc-branch { color: #9bbdb2; margin-right: 8px; font-family: monospace; }
+.doc-type { font-weight: 500; margin-right: 8px; }
+.doc-num { color: #5a7d72; }
+.doc-tag {
+  display: inline-block; margin-left: 8px; padding: 1px 8px;
+  border-radius: 10px; background: #eaf4f0; color: #3d6b5c; font-size: .75rem;
+}
+.doc-cell-date { white-space: nowrap; color: #5a7d72; }
+.doc-cell-sum { text-align: right; white-space: nowrap; }
+.doc-cell-status { white-space: nowrap; }
+
+/* ─── Статус як бейдж зі списком ─────────────────────────────── */
+.status-wrap { position: relative; display: inline-block; }
+.status-badge {
+  border: 1px solid transparent; border-radius: 14px; padding: 3px 12px;
+  font-size: .82rem; cursor: pointer; background: #eee; color: #444;
+}
+.status-badge--muted   { background: #eef1f0; color: #5a6b66; border-color: #dde4e1; }
+.status-badge--warning { background: #fdf3e0; color: #8a5d00; border-color: #f2ddb5; }
+.status-badge--success { background: #e6f6ee; color: #1d6b4a; border-color: #bfe6d3; }
+.status-badge--danger  { background: #fdeceb; color: #a12c22; border-color: #f3c9c5; }
+.status-caret { opacity: .5; margin-left: 4px; font-size: .7rem; }
+.status-fact { font-size: .7rem; color: #a0665f; margin-top: 2px; }
+.status-list {
+  position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 60;
+  background: #fff; border: 1px solid #dde4e1; border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.12); min-width: 160px; overflow: hidden;
+}
+.status-option { padding: 7px 14px; cursor: pointer; font-size: .85rem; }
+.status-option:hover { background: #f3faf7; }
+.status-option--active { font-weight: 600; color: #2f6f5e; }
+
+/* ─── Контекстне меню ────────────────────────────────────────── */
+.ctx-menu {
+  position: fixed; z-index: 200; min-width: 210px; padding: 4px;
+  background: #fff; border: 1px solid #dde4e1; border-radius: 8px;
+  box-shadow: 0 8px 26px rgba(0,0,0,.16);
+}
+.ctx-item {
+  position: relative; padding: 8px 12px; border-radius: 6px;
+  cursor: pointer; font-size: .87rem; display: flex;
+  align-items: center; justify-content: space-between; gap: 12px;
+}
+.ctx-item:hover { background: #f0f7f4; }
+.ctx-item--danger { color: #b3261e; }
+.ctx-item--danger:hover { background: #fdeceb; }
+.ctx-arrow { opacity: .45; }
+.ctx-sep { height: 1px; background: #e8eeec; margin: 4px 6px; }
+.ctx-submenu { position: absolute; left: 100%; top: -4px; margin-left: 2px; }

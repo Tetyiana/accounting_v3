@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
@@ -661,10 +661,72 @@ const PaymentForm = ({ invoice, invoicePaid, onSave, onCancel }) => {
 };
 
 // ─── Рядок рахунку (розгортається) ──────────────────────────────────
+// ─── Контекстне меню (права кнопка / довге натискання) ──────────────
+const ContextMenu = ({ x, y, items, onClose }) => {
+  const [sub, setSub] = useState(null);
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('scroll', close, true); };
+  }, [onClose]);
+
+  return (
+    <div className="ctx-menu" style={{ top: y, left: x }} onClick={e => e.stopPropagation()}>
+      {items.map((it, i) => it.sep ? <div key={i} className="ctx-sep" /> : (
+        <div key={i}
+          className={`ctx-item${it.danger ? ' ctx-item--danger' : ''}`}
+          onMouseEnter={() => setSub(it.children ? i : null)}
+          onClick={() => { if (!it.children) { it.action(); onClose(); } }}>
+          <span>{it.label}</span>
+          {it.children && <span className="ctx-arrow">›</span>}
+          {it.children && sub === i && (
+            <div className="ctx-menu ctx-submenu">
+              {it.children.map((c, j) => (
+                <div key={j} className="ctx-item" onClick={() => { c.action(); onClose(); }}>{c.label}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─── Бейдж статусу зі списком ───────────────────────────────────────
+const StatusBadge = ({ value, options, onChange, factLabel }) => {
+  const [open, setOpen] = useState(false);
+  const cur = options.find(o => o.id === value) || options[0];
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [open]);
+
+  return (
+    <div className="status-wrap" onClick={e => e.stopPropagation()}>
+      <button className={`status-badge status-badge--${cur.color || 'muted'}`} onClick={() => setOpen(p => !p)}>
+        {cur.label} <span className="status-caret">▾</span>
+      </button>
+      {factLabel && <div className="status-fact">факт.: {factLabel}</div>}
+      {open && (
+        <div className="status-list">
+          {options.map(o => (
+            <div key={o.id} className={`status-option${o.id === value ? ' status-option--active' : ''}`}
+              onClick={() => { onChange(o.id); setOpen(false); }}>{o.label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct, onDeleteAct, onUpdateActStatus, onAddPayment, onDelete, onEdit, onCopy, onUpdateStatus, onGenerateTaxInvoice, onRefund, isVatPayer, productOptions }) => {
   const { settings } = useSettings();
   const { activeFop } = useFop();
-  const [open, setOpen] = useState(false);
+  const [ctx, setCtx] = useState(null);       // меню рахунку {x,y}
+  const [ctxAct, setCtxAct] = useState(null); // меню акта {act,x,y}
   const [addActType, setAddActType] = useState(null);
   const [editAct, setEditAct] = useState(null);
   const [addPay, setAddPay] = useState(false);
@@ -701,168 +763,175 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct,
     }
   };
 
+  // Дочірні документи одним списком — щоб показати зв'язок з рахунком
+  const children = [
+    ...invActs.map(a => ({ kind: 'act', id: a.id, data: a })),
+    ...invPayments.map(pm => ({ kind: 'payment', id: pm.id, data: pm })),
+  ];
+
+  const openCtx = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtx({ x: Math.min(e.clientX, window.innerWidth - 240), y: e.clientY });
+  };
+
+  // Тач: довге натискання = права кнопка
+  const touchTimer = useRef(null);
+  const onTouchStart = (e) => {
+    const t = e.touches[0];
+    touchTimer.current = setTimeout(() => {
+      setCtx({ x: Math.min(t.clientX, window.innerWidth - 240), y: t.clientY });
+    }, 500);
+  };
+  const clearTouch = () => { if (touchTimer.current) clearTimeout(touchTimer.current); };
+
+  const ctxItems = [
+    { label: 'Ввести на основі', children: [
+      { label: 'Акт виконаних робіт', action: () => { setAddActType('act'); setAddPay(false); } },
+      { label: 'Накладна на товар',   action: () => { setAddActType('delivery_note'); setAddPay(false); } },
+      { label: 'Оплата',              action: () => { setAddPay(true); setAddActType(null); } },
+      { label: 'Договір (друк)',      action: handlePrintContract },
+    ]},
+    { sep: true },
+    { label: 'Друк рахунку', action: handlePrintInvoice },
+    { label: 'Редагувати',   action: () => onEdit && onEdit(inv) },
+    { label: 'Копіювати',    action: () => onCopy && onCopy(inv) },
+  ];
+
+  if (paid > 0 && inv.direction === 'outgoing') {
+    ctxItems.push({ label: 'Повернення коштів', action: () => {
+      const sum = window.prompt('Сума повернення клієнту, грн:', String(paid));
+      if (!sum) return;
+      const amt = +sum.replace(',', '.');
+      if (!(amt > 0)) { alert('Сума має бути > 0'); return; }
+      const note = window.prompt('Причина повернення (необов\'язково):', '') || '';
+      onRefund && onRefund(amt, note);
+    }});
+  }
+
+  ctxItems.push({ sep: true });
+  ctxItems.push({ label: 'Видалити рахунок', danger: true, action: () => {
+    window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id);
+  }});
+
   return (
     <>
-      <tr className={`invoice-row${open ? ' invoice-row--open' : ''}`} onClick={() => { setOpen(p=>!p); setAddActType(null); setAddPay(false); }}>
-        <td onClick={e => e.stopPropagation()}>
-          <select className="table-input" style={{minWidth:130}} value={inv.status || 'sent'}
-            onChange={e => onUpdateStatus(inv.id, e.target.value)}>
-            {Object.values(INVOICE_STATUSES).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-          {status !== (inv.status || 'sent') && (
-            <div className="cell-muted" style={{fontSize:'.72rem', marginTop:2}}>
-              факт.: {statusInfo.label}
-            </div>
-          )}
+      {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctxItems} onClose={() => setCtx(null)} />}
+
+      {/* ── Рахунок ── */}
+      <tr className="doc-row doc-row--parent"
+        onContextMenu={openCtx}
+        onTouchStart={onTouchStart} onTouchEnd={clearTouch} onTouchMove={clearTouch}>
+        <td className="doc-cell-name">
+          <span className="doc-type">Рахунок</span>
+          <span className="doc-num">№{inv.number}</span>
         </td>
-        <td>№{inv.number}</td>
-        <td>{inv.date}</td>
+        <td className="doc-cell-date">{inv.date}</td>
         <td>{inv.clientName || '—'}</td>
-        <td style={{ textAlign: 'right' }}>{fmtMoney(inv.total)}</td>
-        <td style={{ textAlign: 'right', color: paid > 0 ? 'var(--success)' : undefined }}>{fmtMoney(paid)}</td>
-        <td style={{ textAlign: 'right', color: remain > 0 ? 'var(--error)' : undefined }}>{fmtMoney(remain)}</td>
-        <td onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-            <button className="btn btn--ghost btn--sm" title="Друк рахунку" onClick={handlePrintInvoice}>🖨 Рахунок</button>
-            <button className="btn btn--ghost btn--sm" title="Створити акт виконаних робіт"
-              onClick={() => { setOpen(true); setAddActType(p => p === 'act' ? null : 'act'); setAddPay(false); }}>+ Акт</button>
-            <button className="btn btn--ghost btn--sm" title="Створити видаткову накладну"
-              onClick={() => { setOpen(true); setAddActType(p => p === 'delivery_note' ? null : 'delivery_note'); setAddPay(false); }}>+ Накладна</button>
-            <button className="btn btn--ghost btn--sm" title="Сформувати договір" onClick={handlePrintContract}>+ Договір</button>
-            <button className="btn btn--ghost btn--sm" title="Додати оплату"
-              onClick={() => { setOpen(true); setAddPay(p=>!p); setAddActType(null); }}>+ Оплата</button>
-            {paid > 0 && inv.direction === 'outgoing' && (
-              <button className="btn btn--ghost btn--sm" title="Повернути кошти клієнту (створює транзакцію refund_out)"
-                onClick={() => {
-                  const sum = window.prompt('Сума повернення клієнту, грн:', String(paid));
-                  if (!sum) return;
-                  const amt = +sum.replace(',', '.');
-                  if (!(amt > 0)) { alert('Сума має бути > 0'); return; }
-                  const note = window.prompt('Причина повернення (необов\'язково):', '') || '';
-                  onRefund && onRefund(amt, note);
-                }}>↺ Повернення</button>
-            )}
-            <button className="btn btn--ghost btn--sm" title="Редагувати рахунок" onClick={() => onEdit && onEdit(inv)}>ред.</button>
-            <button className="btn btn--ghost btn--sm" title="Створити новий рахунок на основі цього" onClick={() => onCopy && onCopy(inv)}>копія</button>
-            <button className="btn-icon btn-icon--del" title="Видалити" onClick={() => window.confirm('Видалити рахунок і всі пов\'язані документи?') && onDelete(inv.id)}>✕</button>
-          </div>
+        <td className="doc-cell-sum">{fmtMoney(inv.total)}</td>
+        <td className="doc-cell-sum" style={{ color: paid > 0 ? 'var(--success)' : undefined }}>{fmtMoney(paid)}</td>
+        <td className="doc-cell-sum" style={{ color: remain > 0 ? 'var(--error)' : undefined }}>{fmtMoney(remain)}</td>
+        <td className="doc-cell-status">
+          <StatusBadge
+            value={inv.status || 'sent'}
+            options={Object.values(INVOICE_STATUSES)}
+            onChange={(v) => onUpdateStatus(inv.id, v)}
+            factLabel={status !== (inv.status || 'sent') ? statusInfo.label : null}
+          />
         </td>
       </tr>
 
-      {open && (
+      {/* ── Дочірні документи ── */}
+      {children.map((ch, idx) => {
+        const last = idx === children.length - 1;
+        const branch = last ? '└─' : '├─';
+
+        if (ch.kind === 'act') {
+          const act = ch.data;
+          const typeLabel = ACT_TYPES.find(t => t.id === act.type)?.label || act.type;
+          return (
+            <tr key={ch.id} className="doc-row doc-row--child"
+              onContextMenu={(e) => {
+                e.preventDefault(); e.stopPropagation();
+                setCtxAct({ act, x: Math.min(e.clientX, window.innerWidth - 240), y: e.clientY });
+              }}>
+              <td className="doc-cell-name">
+                <span className="doc-branch">{branch}</span>
+                <span className="doc-type">{typeLabel}</span>
+                <span className="doc-num">№{act.number}</span>
+                {act.taxInvoiceId && <span className="doc-tag">ПН №{act.taxInvoiceNumber}</span>}
+              </td>
+              <td className="doc-cell-date">{act.date}</td>
+              <td className="cell-muted">{act.clientName || inv.clientName || '—'}</td>
+              <td className="doc-cell-sum">{fmtMoney(act.total)}</td>
+              <td className="doc-cell-sum cell-muted">—</td>
+              <td className="doc-cell-sum cell-muted">—</td>
+              <td className="doc-cell-status">
+                <StatusBadge
+                  value={act.status || 'draft'}
+                  options={[{ id:'draft', label:'Чернетка', color:'muted' }, { id:'signed', label:'Підписано', color:'success' }]}
+                  onChange={(v) => onUpdateActStatus(act.id, v)}
+                />
+              </td>
+            </tr>
+          );
+        }
+
+        const pm = ch.data;
+        return (
+          <tr key={ch.id} className="doc-row doc-row--child">
+            <td className="doc-cell-name">
+              <span className="doc-branch">{branch}</span>
+              <span className="doc-type">Оплата</span>
+              <span className="cell-muted">{PAYMENT_METHODS.find(m => m.id === pm.paymentMethod)?.label || pm.paymentMethod}</span>
+              {pm.notes && <span className="doc-tag">{pm.notes}</span>}
+            </td>
+            <td className="doc-cell-date">{pm.date}</td>
+            <td className="cell-muted">{inv.clientName || '—'}</td>
+            <td className="doc-cell-sum cell-muted">—</td>
+            <td className="doc-cell-sum" style={{ color: 'var(--success)' }}>{fmtMoney(pm.amount)}</td>
+            <td className="doc-cell-sum cell-muted">
+              {+pm.acquiringCommission > 0 ? `коміс. ${fmtMoney(pm.acquiringCommission)}` : '—'}
+            </td>
+            <td></td>
+          </tr>
+        );
+      })}
+
+      {/* Контекстне меню акта */}
+      {ctxAct && (
+        <ContextMenu x={ctxAct.x} y={ctxAct.y} onClose={() => setCtxAct(null)} items={[
+          { label: 'Друк', action: () => handlePrintAct(ctxAct.act) },
+          { label: 'Редагувати', action: () => setEditAct(ctxAct.act) },
+          ...(isVatPayer && !ctxAct.act.taxInvoiceId
+            ? [{ label: 'Створити податкову накладну', action: () => onGenerateTaxInvoice(ctxAct.act) }]
+            : []),
+          { sep: true },
+          { label: 'Видалити', danger: true, action: () => {
+            window.confirm('Видалити акт/накладну?') && onDeleteAct && onDeleteAct(ctxAct.act.id);
+          }},
+        ]} />
+      )}
+
+      {/* ── Форми ── */}
+      {(addActType || editAct || addPay) && (
         <tr>
-          <td colSpan={8} style={{ padding: 0 }}>
+          <td colSpan={7} style={{ padding: 0 }}>
             <div className="invoice-detail">
-
-              {/* Акти */}
-              {invActs.length > 0 && (
-                <div className="invoice-detail-section">
-                  <div className="invoice-detail-title">Акти / Накладні</div>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Тип</th>
-                        <th>Номер</th>
-                        <th>Дата</th>
-                        <th>Статус</th>
-                        <th style={{ textAlign: 'right' }}>Сума, грн</th>
-                        <th></th>
-                        {isVatPayer && <th>Податкова накладна</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invActs.map(act => (
-                        <tr key={act.id}>
-                          <td>{ACT_TYPES.find(t=>t.id===act.type)?.label || act.type}</td>
-                          <td>№{act.number}</td>
-                          <td>{act.date}</td>
-                          <td>
-                            <select className="table-input" style={{minWidth:120}} value={act.status || 'draft'}
-                              onChange={e => onUpdateActStatus(act.id, e.target.value)}>
-                              <option value="draft">Чернетка</option>
-                              <option value="signed">Підписано</option>
-                            </select>
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(act.total)}</td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <button className="btn btn--ghost btn--sm" title="Друк" onClick={() => handlePrintAct(act)}>🖨</button>
-                            <button className="btn btn--ghost btn--sm" title="Редагувати"
-                              onClick={() => setEditAct(act)}>ред.</button>
-                            <button className="btn-icon btn-icon--del" title="Видалити"
-                              onClick={() => window.confirm('Видалити акт/накладну?') && onDeleteAct && onDeleteAct(act.id)}>✕</button>
-                          </td>
-                          {isVatPayer && (
-                            <td>
-                              {act.taxInvoiceId ? (
-                                <span className="cell-muted">ПН №{act.taxInvoiceNumber}</span>
-                              ) : (
-                                <button className="btn btn--ghost btn--sm" onClick={() => onGenerateTaxInvoice(act)}>+ ПН</button>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
               {addActType && (
-                <ActForm
-                  invoice={inv}
-                  actList={allActs}
-                  forcedType={addActType}
+                <ActForm invoice={inv} actList={allActs} forcedType={addActType}
                   onSave={(act) => { onAddAct(act); setAddActType(null); }}
-                  onCancel={() => setAddActType(null)}
-                />
+                  onCancel={() => setAddActType(null)} />
               )}
-
               {editAct && (
-                <ActForm
-                  invoice={inv}
-                  initial={editAct}
-                  actList={allActs}
+                <ActForm invoice={inv} initial={editAct} actList={allActs}
                   onSave={(act) => { onUpdateAct && onUpdateAct(editAct.id, act); setEditAct(null); }}
-                  onCancel={() => setEditAct(null)}
-                />
+                  onCancel={() => setEditAct(null)} />
               )}
-
-              {/* Платежі */}
-              {invPayments.length > 0 && (
-                <div className="invoice-detail-section">
-                  <div className="invoice-detail-title">Платежі</div>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Дата</th>
-                        <th>Спосіб</th>
-                        <th style={{ textAlign: 'right' }}>Сума, грн</th>
-                        <th>Комісія, грн</th>
-                        <th>Примітка</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invPayments.map(p => (
-                        <tr key={p.id}>
-                          <td>{p.date}</td>
-                          <td>{PAYMENT_METHODS.find(m=>m.id===p.paymentMethod)?.label || p.paymentMethod}</td>
-                          <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(p.amount)}</td>
-                          <td className="cell-muted">{+p.acquiringCommission > 0 ? fmtMoney(p.acquiringCommission) : '—'}</td>
-                          <td className="cell-muted">{p.notes}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
               {addPay && (
-                <PaymentForm
-                  invoice={inv}
-                  invoicePaid={paid}
-                  onSave={(payment, inv) => { onAddPayment(payment, inv); setAddPay(false); }}
-                  onCancel={() => setAddPay(false)}
-                />
+                <PaymentForm invoice={inv} invoicePaid={paid}
+                  onSave={(payment, i) => { onAddPayment(payment, i); setAddPay(false); }}
+                  onCancel={() => setAddPay(false)} />
               )}
             </div>
           </td>
@@ -978,19 +1047,18 @@ const SalesView = () => {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Статус</th>
-              <th>Номер</th>
+              <th>Документ</th>
               <th>Дата</th>
               <th>Контрагент</th>
               <th style={{ textAlign: 'right' }}>Сума, грн</th>
               <th style={{ textAlign: 'right' }}>Оплачено</th>
               <th style={{ textAlign: 'right' }}>Залишок</th>
-              <th></th>
+              <th>Статус</th>
             </tr>
           </thead>
           <tbody>
             {dirInvoices.length === 0 ? (
-              <tr><td colSpan={8} className="table-empty">Рахунків немає</td></tr>
+              <tr><td colSpan={7} className="table-empty">Рахунків немає</td></tr>
             ) : dirInvoices.map(inv => (
               <InvoiceRow
                 key={inv.id}
