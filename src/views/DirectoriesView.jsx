@@ -7,7 +7,7 @@ import AttachmentsList from '../components/common/AttachmentsList';
 
 const EMPTY_CLIENT = {
   id: null, name: '', ipn: '', phone: '', email: '',
-  address: '', isVatPayer: false, vatCertificate: '', notes: '',
+   address: '', isVatPayer: false, notes: '',
 };
 const EMPTY_PRODUCT = {
   id: null, name: '', unit: 'шт', price: '', vatRate: 'no_vat', notes: '',
