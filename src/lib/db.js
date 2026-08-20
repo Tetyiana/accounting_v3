@@ -49,7 +49,11 @@ export const flushPending = async () => {
     try {
       const { error } = await supabase.from(item.table).insert(toRow(item.row));
       // 23505 = дублікат PK: запис уже в базі, з черги прибираємо
-      if (error && error.code !== '23505') left.push(item);
+            // 23505 — дублікат PK (запис уже в базі). PGRST* — помилка схеми/запиту:
+      // повтор не допоможе, тримати в черзі вічно немає сенсу.
+      const hopeless = !error || error.code === '23505' || String(error.code || '').startsWith('PGRST');
+      if (error && hopeless) console.error(`[db] запис відкинуто з черги (${item.table}):`, error.message, item.row);
+      if (!hopeless) left.push(item);
     } catch { left.push(item); }
   }
   qWrite(left);
