@@ -2,19 +2,39 @@ import React from 'react';
 import { useData } from '../context/DataContext';
 
 const KIND_LABEL = {
-  transaction: 'Операція (журнал)',
-  movement:    'Рух (склад)',
-  debt:        'Дебітор/кредитор',
-  vatInvoice:  'Податкова накладна',
+  transaction:   'Операція (журнал)',
+  movement:      'Рух (склад)',
+  debt:          'Дебітор/кредитор',
+  vatInvoice:    'Податкова накладна',
+  invoice:       'Рахунок',
+  act:           'Акт',
+  payment:       'Оплата',
+  employee:      'Працівник',
+  payrollRecord: 'Нарахування зарплати',
+  client:        'Контрагент',
+  product:       'Номенклатура',
+  contract:      'Договір',
 };
 
 const describe = (item) => {
   const d = item.data || {};
-  if (item.kind === 'transaction') return `${d.date} · ${d.counterparty} · ${d.amount} грн`;
-  if (item.kind === 'movement')    return `${d.date} · ${d.itemName} · ${d.qty}`;
-  if (item.kind === 'debt')        return `${d.date} · ${d.counterparty} · ${d.amount} грн`;
-  if (item.kind === 'vatInvoice')  return `${d.date} · №${d.number} · ${d.counterparty}`;
-  return '—';
+  const parts = {
+    transaction:   [d.date, d.counterparty, d.amount && `${d.amount} грн`],
+    movement:      [d.date, d.itemName, d.qty],
+    debt:          [d.date, d.counterparty, d.amount && `${d.amount} грн`],
+    vatInvoice:    [d.date, d.number && `№${d.number}`, d.counterparty],
+    invoice:       [d.date, d.number && `№${d.number}`, d.clientName, d.total && `${d.total} грн`],
+    act:           [d.date, d.number && `№${d.number}`, d.clientName],
+    payment:       [d.date, d.amount && `${d.amount} грн`, d.counterparty],
+    employee:      [d.fullName, d.position],
+    payrollRecord: [d.period, d.netPay && `${d.netPay} грн`],
+    client:        [d.name, d.ipn],
+    product:       [d.name, d.unit],
+    contract:      [d.date, d.number && `№${d.number}`, d.clientName],
+  }[item.kind];
+
+  const text = (parts || []).filter(Boolean).join(' · ');
+  return text || '—';
 };
 
 const TrashView = () => {
