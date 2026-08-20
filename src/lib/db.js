@@ -32,16 +32,45 @@ export const fromRow = (row) => {
 
 export const newId = () => crypto.randomUUID();
 
-// ─── Generic CRUD (fire-and-forget з логом помилок) ──────────
+// ─── Черга незбережених записів (переживає перезавантаження) ──
+const Q_KEY = 'db_pending_v1';
+const qRead  = () => { try { return JSON.parse(localStorage.getItem(Q_KEY) || '[]'); } catch { return []; } };
+const qWrite = (q) => localStorage.setItem(Q_KEY, JSON.stringify(q));
+const qPush  = (table, row) => { const q = qRead(); q.push({ table, row, ts: Date.now() }); qWrite(q); };
+
+export const pendingCount = () => qRead().length;
+
+// Дописує все, що не долетіло. Виклик: при старті і при відновленні зв'язку.
+export const flushPending = async () => {
+  const q = qRead();
+  if (!q.length) return 0;
+  const left = [];
+  for (const item of q) {
+    try {
+      const { error } = await supabase.from(item.table).insert(toRow(item.row));
+      // 23505 = дублікат PK: запис уже в базі, з черги прибираємо
+      if (error && error.code !== '23505') left.push(item);
+    } catch { left.push(item); }
+  }
+  qWrite(left);
+  return q.length - left.length;
+};
+
+// ─── Generic CRUD ────────────────────────────────────────────
 export const dbInsert = (table, row) => {
-  supabase.from(table).insert(toRow(row)).then(({ error }) => {
-    if (error) {
-      console.error(`[db] insert ${table}:`, error.message, row);
-      // Критично: збереження не відбулося — повідомляємо, інакше дані
-      // живуть лише до перезавантаження і «зникають» непомітно.
-      alert(`Не збережено в базу (${table}): ${error.message}`);
-    }
-  });
+  supabase.from(table).insert(toRow(row))
+    .then(({ error }) => {
+      if (error) {
+        console.error(`[db] insert ${table}:`, error.message, row);
+        qPush(table, row);
+      }
+    })
+    .catch((e) => {
+      // База недоступна — fetch кидає виняток, .then сюди не доходить.
+      // Саме через відсутність цього catch дані зникали мовчки.
+      console.error(`[db] insert ${table} (network):`, e?.message, row);
+      qPush(table, row);
+    });
 };
 
 export const dbUpdate = (table, id, patch) => {
