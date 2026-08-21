@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
 import { ESV_AMOUNT } from '../utils/taxLogic';
+import { checkIncomeLimit } from '../utils/incomeLimits';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
 import { buildEpG3Xml, buildEpG12Xml, buildUnifiedReportXml, downloadXml } from '../utils/xmlDps';
@@ -35,13 +36,26 @@ const DpsView = () => {
   const epFixed = group === '1' ? round2(LIVING_WAGE * 0.10) : round2(MIN_WAGE * 0.20);
   const vzFixed = round2(MIN_WAGE * 0.10);
 
-  // Дохід за місяцями обраного року (касовий метод)
+  // Дохід за місяцями обраного року (касовий метод).
+  // До доходу платника ЄП суми ПДВ не включаються (пп. 1 п. 292.11 ПКУ),
+  // тому для платника ПДВ віднімаємо ПДВ, зафіксований в операції.
   const incomeByMonth = useMemo(() => {
     const arr = Array(12).fill(0);
     transactions.filter(t => t.type === 'income' && (t.date || '').startsWith(String(selYear)))
-      .forEach(t => { const m = +(t.date || '').slice(5, 7); if (m >= 1 && m <= 12) arr[m - 1] += (+t.amount || 0); });
+      .forEach(t => {
+        const m = +(t.date || '').slice(5, 7);
+        if (m < 1 || m > 12) return;
+        const vat = group === '3_3_vat' ? (+t.vatAmount || 0) : 0;
+        arr[m - 1] += Math.max(0, (+t.amount || 0) - vat);
+      });
     return arr.map(round2);
-  }, [transactions, selYear]);
+  }, [transactions, selYear, group]);
+
+  // Річний дохід наростаючим — для контролю граничного обсягу (п. 291.4 ПКУ)
+  const incomeYear = useMemo(
+    () => round2(incomeByMonth.reduce((s, v) => s + v, 0)), [incomeByMonth]);
+  const limitInfo = useMemo(
+    () => checkIncomeLimit(incomeYear, group, selYear), [incomeYear, group, selYear]);
 
   const period = QUARTERS.find(q => q.id === selQ) || QUARTERS[0];
   const incomeCumulative = round2(incomeByMonth.slice(0, period.months[1]).reduce((s, v) => s + v, 0));
@@ -71,8 +85,8 @@ const DpsView = () => {
 
     const secIV_g3 = `
 <tr><td>07</td><td>Сума доходу за податковий (звітний) період, оподаткована за ставкою ${(epRate*100).toFixed(0)}%</td><td align="right">${fmtMoney(incomeCumulative)}</td></tr>
-<tr><td>08</td><td>Сума доходу, оподаткована за подвійною ставкою (у разі перевищення)</td><td align="right">0,00</td></tr>
-<tr><td>09</td><td>Сума єдиного податку за податковий (звітний) період (р.07 × ставка + р.08 × ставка×2)</td><td align="right"><b>${fmtMoney(epCumulative)}</b></td></tr>
+<tr><td>08</td><td>Сума доходу, що перевищує граничний обсяг (оподаткування за ставкою 15%)</td><td align="right">${fmtMoney(limitInfo.excess || 0)}</td></tr>
+<tr><td>09</td><td>Сума єдиного податку за податковий (звітний) період (р.07 × ставка + р.08 × 15%)</td><td align="right"><b>${fmtMoney(round2(epCumulative + (limitInfo.excessTax || 0)))}</b></td></tr>
 <tr><td>10</td><td>Сума єдиного податку за попередній звітний період (наростаючим)</td><td align="right">${fmtMoney(epPrev)}</td></tr>
 <tr><td>11</td><td><b>Сума єдиного податку, яка підлягає сплаті за останній квартал</b> (р.09 − р.10)</td><td align="right"><b>${fmtMoney(epToPay)}</b></td></tr>
 <tr><td>12</td><td>Сума військового збору (р.07 × 1%) наростаючим</td><td align="right">${fmtMoney(vzCumulative)}</td></tr>
@@ -81,10 +95,10 @@ const DpsView = () => {
 
     const secIV_g12 = `
 <tr><td>01</td><td>Обсяг доходу за звітний рік</td><td align="right"><b>${fmtMoney(incomeCumulative)}</b></td></tr>
-<tr><td>02</td><td>Сума доходу, оподаткована за подвійною ставкою (у разі перевищення)</td><td align="right">0,00</td></tr>
+<tr><td>02</td><td>Сума доходу, що перевищує граничний обсяг (оподаткування за ставкою 15%)</td><td align="right">${fmtMoney(limitInfo.excess || 0)}</td></tr>
 <tr><td>03</td><td>Щомісячний авансовий внесок ЄП</td><td align="right">${fmtMoney(epFixed)}</td></tr>
 <tr><td>04</td><td><b>Сума ЄП за рік (12 місяців)</b></td><td align="right"><b>${fmtMoney(round2(epFixed * 12))}</b></td></tr>
-<tr><td>05</td><td>Щомісячний авансовий внесок ВЗ (1% × МЗП)</td><td align="right">${fmtMoney(vzFixed)}</td></tr>
+<tr><td>05</td><td>Щомісячний авансовий внесок ВЗ (10% × МЗП)</td><td align="right">${fmtMoney(vzFixed)}</td></tr>
 <tr><td>06</td><td><b>Сума ВЗ за рік (12 місяців)</b></td><td align="right"><b>${fmtMoney(round2(vzFixed * 12))}</b></td></tr>`;
 
     const html = `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8"><title>Декларація ЄП</title>
@@ -219,8 +233,26 @@ ${isG3 ? `<tr><td>у т.ч. за останній квартал</td><td align="
         )}
       </div>
 
+      {limitInfo.limit != null && limitInfo.level !== 'ok' && (
+        <div className={`settings-msg${limitInfo.level === 'exceeded' ? ' settings-msg--error' : ''}`}
+             style={{ marginBottom: 12 }}>
+          {limitInfo.level === 'exceeded' ? '⛔' : '⚠'} {limitInfo.message}
+          {limitInfo.excess > 0 && (
+            <> ЄП з перевищення (15%): <b>{fmtMoney(limitInfo.excessTax)}</b> грн.</>
+          )}
+        </div>
+      )}
+
       <div className="settings-section">
         <h3>{declTitle}</h3>
+        {limitInfo.limit != null && (
+          <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 4 }}>
+            Граничний обсяг доходу на {selYear} р.: <b>{fmtMoney(limitInfo.limit)}</b> грн
+            ({limitInfo.multiplier} × МЗП {fmtMoney(limitInfo.minWage)}).
+            Дохід за рік: <b>{fmtMoney(limitInfo.used)}</b> грн ({limitInfo.percent}%).
+            Залишок: <b>{fmtMoney(limitInfo.left)}</b> грн.
+          </p>
+        )}
         <div className="stats-grid" style={{ marginTop: 10 }}>
           <div className="stat-card"><div className="stat-label">Дохід {isG3 ? 'наростаючим' : 'за рік'}</div>
             <div className="stat-value">{fmtMoney(incomeCumulative)}</div></div>

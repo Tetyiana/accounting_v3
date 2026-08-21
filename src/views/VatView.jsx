@@ -23,7 +23,7 @@ const RATE_LABEL = { 20: 'Р.1.1', 14: 'Р.1.2', 7: 'Р.1.3', 0: 'Р.2/Р.3' };
 const CREDIT_ROW = { 20: 'Р.10.1', 14: 'Р.10.2', 7: 'Р.10.3', 0: 'Р.10.4' };
 
 const VatView = () => {
-  const { vatInvoices, addVatInvoice, deleteVatInvoice } = useData();
+  const { vatInvoices, addVatInvoice, updateVatInvoice, deleteVatInvoice } = useData();
   const { activeFop } = useFop();
   const [tab, setTab] = useState('outgoing');
   const [period, setPeriod] = useState(thisMonth());
@@ -36,8 +36,58 @@ const VatView = () => {
     if (!form.number || !form.counterparty || !form.amount || !form.date) { setErr('Заповніть обов\'язкові поля'); return; }
     if (isNaN(+form.amount)) { setErr('Некоректна сума'); return; }
     if (form.kind === 'pn' && +form.amount <= 0) { setErr('Сума ПН має бути > 0 (для коригування — оберіть РК)'); return; }
-    addVatInvoice({ ...form, direction: tab, rate: +form.rate });
+
+    const num = String(form.number).trim();
+    if (tab === 'outgoing') {
+      // п. 6 Порядку № 1307: номер лише цифри, не може починатися з «0».
+      // Друга частина (після «/») — спецкод, у звичайній ПН її немає.
+      const [main, suffix] = num.split('/');
+      if (!/^[1-9]\d*$/.test(main)) {
+        setErr('Номер ПН — лише цифри і не може починатися з «0» (п. 6 Порядку № 1307)'); return;
+      }
+      if (suffix !== undefined && !/^\d+$/.test(suffix)) {
+        setErr('Друга частина номера (після «/») — лише цифри'); return;
+      }
+      // Не допускається складання за однією датою ПН з однаковим номером:
+      // друга і наступні не будуть зареєстровані в ЄРПН.
+      const dup = vatInvoices.find(v =>
+        v.direction === 'outgoing' && v.date === form.date &&
+        String(v.number).trim() === num);
+      if (dup) {
+        setErr(`ПН № ${num} за ${form.date} вже існує. За однією датою двох ПН з однаковим номером бути не може.`);
+        return;
+      }
+    }
+    addVatInvoice({ ...form, number: num, direction: tab, rate: +form.rate, registered: false });
     setShowForm(false); setForm(EMPTY); setErr('');
+  };
+
+  // Реєстрація в ЄРПН — незворотна для обліку: далі тільки РК.
+  const toggleRegistered = (v) => {
+    if (v.registered) {
+      setErr(`ПН № ${v.number} вже позначена як зареєстрована. Зняти позначку не можна — виправлення лише через РК.`);
+      return;
+    }
+    const d = window.prompt('Дата реєстрації в ЄРПН (РРРР-ММ-ДД):', v.date || '');
+    if (!d) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) { setErr('Некоректна дата реєстрації'); return; }
+    if (!window.confirm(
+      `Позначити ПН № ${v.number} від ${v.date} як зареєстровану в ЄРПН?\n\n`
+      + 'Після цього документ не можна буде видалити чи змінити — '
+      + 'виправлення лише розрахунком коригування.')) return;
+    updateVatInvoice(v.id, { registered: true, registrationDate: d });
+    setErr('');
+  };
+
+  const handleDelete = (v) => {
+    if (v.registered) {
+      setErr(`ПН № ${v.number} від ${v.date} зареєстрована в ЄРПН — видалення заборонено. `
+           + 'Виправлення оформлюється розрахунком коригування (РК).');
+      return;
+    }
+    if (!window.confirm(`Видалити ${v.kind === 'rk' ? 'РК' : 'ПН'} № ${v.number} від ${v.date}?`)) return;
+    const problem = deleteVatInvoice(v.id);
+    if (problem) setErr(problem);
   };
 
   const enriched = useMemo(() => [...vatInvoices]
@@ -241,7 +291,8 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
               <tr key={v.id}>
                 <td>{v.date}</td>
                 <td>{v.kind === 'rk' ? <span className="badge badge--warning">РК</span> : <span className="badge badge--info">ПН</span>}</td>
-                <td>{v.number}</td><td>{v.counterparty}</td>
+                <td>{v.number}{v.registered && <span className="badge badge--success" style={{ marginLeft: 6 }}>ЄРПН</span>}</td>
+                <td>{v.counterparty}</td>
                 <td>{v.rate}%</td>
                 <td style={{ textAlign: 'right' }}>{fmtMoney(v.base)}</td>
                 <td style={{ textAlign: 'right', fontWeight: 600 }}>{fmtMoney(v.vat)}</td>
@@ -252,8 +303,14 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
                   ) : tab === 'outgoing' && v.kind === 'rk' ? (
                     <button className="btn-icon" title="XML РК для ЄРПН" onClick={() => exportRkXml(v)}>⬇</button>
                   ) : null}
+                  {tab === 'outgoing' && !v.registered && (
+                    <button className="btn-icon" title="Позначити як зареєстровану в ЄРПН"
+                      onClick={() => toggleRegistered(v)}>✓</button>
+                  )}
                   <button className="btn-icon btn-icon--del"
-                    onClick={() => window.confirm('Видалити запис?') && deleteVatInvoice(v.id)}>✕</button>
+                    title={v.registered ? 'Зареєстрована ПН — видалення заборонено' : 'Видалити'}
+                    disabled={!!v.registered}
+                    onClick={() => handleDelete(v)}>✕</button>
                 </td>
               </tr>
             ))}

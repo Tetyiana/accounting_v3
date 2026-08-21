@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
+import { useSettings } from '../context/SettingsContext';
 import AttachmentsList from '../components/common/AttachmentsList';
 import { calculateRunningBalance } from '../utils/accountingLogic';
 import UploadOperation from '../components/Operations/UploadOperation';
@@ -9,7 +10,7 @@ import { parseFile } from '../utils/parser';
 import { parseBankFile } from '../utils/fileHandlers';
 import { openPrintWindow } from '../utils/printWindow';
 
-const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank' };
+const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank', vatAmount: '' };
 const fmt = n => (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2 });
 const METHOD_LABEL = { bank: 'Банк', cash: 'Каса', acquiring: 'Еквайринг' };
 
@@ -66,6 +67,10 @@ ${section('Банк / еквайринг', bankRows)}
 const JournalView = () => {
   const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment, contracts } = useData();
   const { activeFop } = useFop();
+  const { settings } = useSettings();
+  // Для ФОП 3 групи — платника ПДВ сума ПДВ не входить до доходу (пп. 1 п. 292.11 ПКУ),
+  // тому її треба виділяти з надходження.
+  const needVatSplit = settings.taxGroup === '3_3_vat' || settings.isVatPayer;
   const [showForm, setShowForm]   = useState(false);
   const [editId, setEditId]       = useState(null);
   const [linkInvoiceId, setLinkInvoiceId] = useState('');
@@ -113,6 +118,9 @@ const JournalView = () => {
   const handleSave = () => {
     if (!form.counterparty || !form.amount || !form.date) { setErr('Заповніть обов\'язкові поля'); return; }
     if (isNaN(+form.amount) || +form.amount <= 0) { setErr('Некоректна сума'); return; }
+    if (+form.vatAmount < 0 || +form.vatAmount > +form.amount) {
+      setErr('ПДВ не може бути від\'ємним або більшим за суму операції'); return;
+    }
     if (editId) {
       updateTransaction(editId, { ...form, type: opType });
       setEditId(null);
@@ -362,6 +370,16 @@ const JournalView = () => {
               <label>Сума, грн <span className="req">*</span></label>
               <input type="number" name="amount" value={form.amount} onChange={set} placeholder="0.00" min="0" step="0.01" />
             </div>
+            {needVatSplit && opType === 'income' && (
+              <div className="field">
+                <label>у т.ч. ПДВ, грн</label>
+                <input type="number" name="vatAmount" value={form.vatAmount ?? ''} onChange={set}
+                       placeholder="0.00" min="0" step="0.01" />
+                <span className="cell-muted" style={{ fontSize: '.74rem' }}>
+                  До доходу ЄП не включається (пп. 1 п. 292.11 ПКУ)
+                </span>
+              </div>
+            )}
             <div className="field">
               <label>Примітка</label>
               <input name="description" value={form.description} onChange={set} placeholder="Опис операції" />

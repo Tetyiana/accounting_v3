@@ -30,6 +30,9 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
     if (!form.fullName.trim()) { setErr('ПІБ обов\'язкове'); return; }
     if (!form.rnokpp.trim() || form.rnokpp.replace(/\D/g,'').length !== 10) { setErr('РНОКПП — 10 цифр'); return; }
     if (!form.hireDate) { setErr('Вкажіть дату прийому'); return; }
+    if (form.hasDisability && !form.disabilityDocDate) {
+      setErr('Для ставки ЄСВ 8,41% вкажіть дату витягу/довідки про інвалідність'); return;
+    }
     setErr('');
     onSave(form);
   };
@@ -87,6 +90,28 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
           <input type="number" name="leaveUsed" value={form.leaveUsed || 0} onChange={set} min="0" step="0.5" />
         </div>
       </div>
+      <div className="form-row-3">
+        <div className="field">
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" name="hasDisability" checked={!!form.hasDisability} onChange={setCheck} />
+            Особа з інвалідністю (ЄСВ 8,41%)
+          </label>
+        </div>
+        {form.hasDisability && (
+          <div className="field">
+            <label>Дата витягу / довідки <span className="req">*</span></label>
+            <input type="date" name="disabilityDocDate" value={form.disabilityDocDate || ''} onChange={set} />
+          </div>
+        )}
+        {form.hasDisability && (
+          <div className="field">
+            <span className="cell-muted" style={{ fontSize: '.78rem' }}>
+              Пільгова ставка застосовується з дати отримання підтвердного документа.
+              Донарахування ЄСВ до мінімального внеску не робиться.
+            </span>
+          </div>
+        )}
+      </div>
       <div className="form-actions">
         <button className="btn btn--primary" onClick={handleSave}>Зберегти</button>
         <button className="btn btn--ghost" onClick={onCancel}>Скасувати</button>
@@ -143,10 +168,11 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const totalGross = round2(salaryAfterUnpaid + sickInfo.employerAmount + leaveAmt + compAmt + (+otherAccruals || 0));
 
   const calc = useMemo(() => {
-    if (mode === 'gross') return calcNetFromGross(totalGross, deductions, isFullMonth);
-    const base = calcGrossFromNet(+netInput || 0, deductions, false); // неповний місяць при нетто-режимі
-    return base || calcNetFromGross(0, deductions, isFullMonth);
-  }, [mode, totalGross, netInput, deductions, isFullMonth]);
+    const esvOpts = { hasDisability: !!employee.hasDisability };
+    if (mode === 'gross') return calcNetFromGross(totalGross, deductions, isFullMonth, esvOpts);
+    const base = calcGrossFromNet(+netInput || 0, deductions, false, esvOpts); // неповний місяць при нетто-режимі
+    return base || calcNetFromGross(0, deductions, isFullMonth, esvOpts);
+  }, [mode, totalGross, netInput, deductions, isFullMonth, employee.hasDisability]);
 
   const addDeduction = () => setDeductions(p => [
     ...p, { id: Date.now().toString(), type: 'executive', label: 'Виконавчий лист', base: 'percent', value: '', amount: 0 }
@@ -175,9 +201,10 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
       const salaryNet2 = round2(gInput - unpaid2.deduction);
       const totalGross2 = round2(salaryNet2 + sick2.employerAmount + leave2 + comp2 + other);
 
+      const esvOpts2 = { hasDisability: !!employee.hasDisability };
       const finalCalc = mode === 'gross'
-        ? calcNetFromGross(totalGross2, deductions, fullMonth)
-        : (calcGrossFromNet(+netInput || 0, deductions, false) || calcNetFromGross(0, deductions, fullMonth));
+        ? calcNetFromGross(totalGross2, deductions, fullMonth, esvOpts2)
+        : (calcGrossFromNet(+netInput || 0, deductions, false, esvOpts2) || calcNetFromGross(0, deductions, fullMonth, esvOpts2));
 
       if (!finalCalc) { alert('Помилка розрахунку'); return; }
 
@@ -207,6 +234,8 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         netPay:               finalCalc.netPay,
         esv:                  finalCalc.esv,
         esvBase:              finalCalc.esvBase,
+        esvRate:              finalCalc.esvRate,
+        hasDisability:        !!employee.hasDisability,
         status:               'draft',
         notes,
       });

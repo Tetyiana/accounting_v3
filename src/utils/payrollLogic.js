@@ -2,7 +2,7 @@
 // Джерела: КЗпП, ПКУ ст.167-170, ЗУ "Про ЄСВ", ЗУ "Про відпустки".
 
 import {
-  PDFO_RATE, VZ_RATE, ESV_RATE,
+  PDFO_RATE, VZ_RATE, ESV_RATE, ESV_RATE_DISABILITY,
   MIN_WAGE, ESV_MAX_BASE, AVG_CALENDAR_DAYS,
 } from '../constants/payrollTypes';
 
@@ -10,7 +10,13 @@ import {
 // isFullMonth = true якщо не було відпустки за вл. рах., лікарняних тощо.
 // Якщо повний місяць і нарахована < мінімалки → ЄСВ від мінімалки (ст.7 ЗУ про ЄСВ).
 // Якщо неповний місяць (факт. відпрацювання) → ЄСВ від реально нарахованого.
-export const calcNetFromGross = (gross, deductions = [], isFullMonth = true) => {
+// opts.hasDisability — працівник з інвалідністю (підтверджена витягом/довідкою):
+//   ставка ЄСВ 8,41% (ч. 13 ст. 8 ЗУ № 2464) і вимога мінімального страхового
+//   внеску до нього НЕ застосовується — ЄСВ від фактично нарахованого.
+//   Максимальна база (20 МЗП) при цьому діє на загальних підставах.
+export const calcNetFromGross = (gross, deductions = [], isFullMonth = true, opts = {}) => {
+  const hasDisability = !!opts.hasDisability;
+  const esvRate = hasDisability ? ESV_RATE_DISABILITY : ESV_RATE;
   const g    = +gross || 0;
   const pdfo = round2(g * PDFO_RATE);
   const vz   = round2(g * VZ_RATE);
@@ -29,14 +35,16 @@ export const calcNetFromGross = (gross, deductions = [], isFullMonth = true) => 
   const totalDeductions = round2(resolvedDeductions.reduce((s, d) => s + d.amount, 0));
   const netPay = round2(netBeforeDeductions - totalDeductions);
 
-  // ЄСВ: від мінімалки лише якщо повний місяць і факт. брутто < мінімалки
-  const esvBase = (isFullMonth && g > 0 && g < MIN_WAGE)
+  // ЄСВ: від мінімалки лише якщо повний місяць і факт. брутто < мінімалки.
+  // Для працівників з інвалідністю донарахування до мінімального внеску немає.
+  const esvBase = (!hasDisability && isFullMonth && g > 0 && g < MIN_WAGE)
     ? MIN_WAGE
     : Math.min(Math.max(g, 0), ESV_MAX_BASE);
-  const esv = round2(esvBase * ESV_RATE);
+  const esv = round2(esvBase * esvRate);
 
   return {
     gross: g, pdfo, vz,
+    hasDisability, esvRate,
     netBeforeDeductions,
     deductions: resolvedDeductions,
     totalDeductions,
@@ -50,7 +58,7 @@ export const calcNetFromGross = (gross, deductions = [], isFullMonth = true) => 
 // Нетто → Брутто (зворотній розрахунок).
 // Вирішується аналітично без ітерацій за рахунок лінійності формули.
 // Якщо є аліменти % — враховуємо у формулі.
-export const calcGrossFromNet = (net, deductions = [], isFullMonth = true) => {
+export const calcGrossFromNet = (net, deductions = [], isFullMonth = true, opts = {}) => {
   const n = +net || 0;
   const percentDeductions = deductions
     .filter(d => d.base === 'percent')
@@ -59,7 +67,7 @@ export const calcGrossFromNet = (net, deductions = [], isFullMonth = true) => {
   const divider = (1 - PDFO_RATE - VZ_RATE) * (1 - percentDeductions);
   if (divider <= 0) return null;
   const gross = round2(n / divider);
-  return calcNetFromGross(gross, deductions, isFullMonth);
+  return calcNetFromGross(gross, deductions, isFullMonth, opts);
 };
 
 // ─── Відпускні ──────────────────────────────────────────────────────

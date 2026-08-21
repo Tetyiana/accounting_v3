@@ -268,17 +268,31 @@ const STATUS_BADGE = {
   advance:   'badge--info',
 };
 
+// Наскрізна нумерація в межах року. Беремо МАКСИМУМ уже виданих номерів,
+// а не їх кількість: після видалення документа номер не має повторюватись.
 const mkNum = (list, prefix, dateStr) => {
   const year = (dateStr || new Date().toISOString()).slice(0, 4);
-  const count = list.filter(i => (i.number||'').startsWith(prefix) && (i.date||'').slice(0,4) === year).length;
-  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  const max = list.reduce((m, i) => {
+    if ((i.date||'').slice(0,4) !== year) return m;
+    const hit = re.exec(i.number || '');
+    return hit ? Math.max(m, +hit[1]) : m;
+  }, 0);
+  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
 };
 
-// Податкові накладні — наскрізна нумерація в межах календарного місяця
+// Податкові накладні — нумерація в межах календарного місяця, тільки ВИДАНІ.
+// Вхідні ПН нумерує постачальник — вони не зсувають власну нумерацію.
+// Номер ПН: лише цифри, не може починатися з «0» (п. 6 Порядку № 1307,
+// ЗІР 101.27), тому padStart не застосовуємо.
 const mkVatNum = (vatInvoices, dateStr) => {
   const monthKey = (dateStr || new Date().toISOString()).slice(0, 7);
-  const count = vatInvoices.filter(v => (v.date||'').slice(0,7) === monthKey).length;
-  return String(count + 1).padStart(4, '0');
+  const max = vatInvoices.reduce((m, v) => {
+    if (v.direction !== 'outgoing' || (v.date||'').slice(0,7) !== monthKey) return m;
+    const n = parseInt(String(v.number || '').split('/')[0], 10);
+    return Number.isFinite(n) ? Math.max(m, n) : m;
+  }, 0);
+  return String(max + 1);
 };
 
 // Автовизначення типу документа за одиницями вимірювання позицій рахунку:
@@ -1083,6 +1097,18 @@ const SalesView = () => {
                 }}
                 onUpdateStatus={(id, newStatus) => updateInvoice(id, { status: newStatus })}
                 onGenerateTaxInvoice={(act) => {
+                  // Одна операція — одна ПН. Повторний клік не має плодити
+                  // другу накладну з іншим номером на той самий акт.
+                  const exists = vatInvoices.find(v =>
+                    v.id === act.taxInvoiceId ||
+                    (v.direction === 'outgoing' && v.sourceActId === act.id));
+                  if (exists) {
+                    alert(`На акт № ${act.number} вже виписано ПН № ${exists.number} від ${exists.date}.`
+                      + (exists.registered
+                          ? '\nВона зареєстрована в ЄРПН — зміни лише через РК.'
+                          : '\nЯкщо ПН помилкова — видаліть її в модулі ПДВ і сформуйте заново.'));
+                    return;
+                  }
                   const num = mkVatNum(vatInvoices, act.date);
                   const vatInv = addVatInvoice({
                     date: act.date,
@@ -1092,6 +1118,7 @@ const SalesView = () => {
                     amount: (calcDocTotals(act.items).subtotal || 0),
                     sourceActId: act.id,
                     sourceInvoiceNumber: inv.number,
+                    registered: false,
                   });
                   updateAct(act.id, { taxInvoiceId: vatInv.id, taxInvoiceNumber: vatInv.number });
                 }}

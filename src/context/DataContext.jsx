@@ -168,7 +168,19 @@ export const DataProvider = ({ fopId, children }) => {
     return item;
   }, [fopId, mk]);
 
+  const updateVatInvoice = useCallback((id, patch) => {
+    setVatInvoices(p => p.map(v => v.id === id ? { ...v, ...patch } : v));
+    dbUpdate('vat_invoices', id, stripMeta(patch));
+  }, []);
+
+  // Зареєстровану в ЄРПН ПН видаляти не можна — виправлення лише через РК.
+  // Повертає рядок з помилкою або null, якщо видалення виконано.
   const deleteVatInvoice = useCallback((id) => {
+    const target = vatInvoices.find(v => v.id === id);
+    if (target?.registered) {
+      return `ПН № ${target.number} від ${target.date} зареєстрована в ЄРПН. `
+           + 'Видалення заборонено — оформіть розрахунок коригування (РК).';
+    }
     setVatInvoices(prev => {
       const item = prev.find(v => v.id === id);
       if (item) {
@@ -178,7 +190,8 @@ export const DataProvider = ({ fopId, children }) => {
       return prev.filter(v => v.id !== id);
     });
     dbDelete('vat_invoices', id);
-  }, [fopId]);
+    return null;
+  }, [fopId, vatInvoices]);
 
   // ─── Рахунки ─────────────────────────────────────────────────
   const addInvoice = useCallback((inv) => {
@@ -570,7 +583,7 @@ export const DataProvider = ({ fopId, children }) => {
       transactions,  addTransaction, updateTransaction, deleteTransaction,
       movements,     addMovement,       deleteMovement,
       debts,         addDebt,   updateDebt,   deleteDebt,
-      vatInvoices,   addVatInvoice,     deleteVatInvoice,
+      vatInvoices,   addVatInvoice,     updateVatInvoice,  deleteVatInvoice,
       invoices,      addInvoice, updateInvoice, deleteInvoice,
       acts,          addAct,     updateAct,     deleteAct,
       payments,      addPayment,        deletePayment,

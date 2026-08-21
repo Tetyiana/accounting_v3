@@ -1,3 +1,8 @@
+import {
+  MIN_WAGE, ESV_MAX_BASE,
+  PERSON_TYPE_EMPLOYEE, PERSON_TYPE_DISABILITY,
+} from '../constants/payrollTypes';
+
 // Генерація XML Єдиної звітності (Додатки 1 і 4ДФ).
 // Схема J0501401 — місячна звітність роботодавця.
 // Формат відповідає вимогам ДПС станом на 2025 р.
@@ -45,15 +50,21 @@ const buildAppendix1 = (records, employees, period) => {
 
   const rows = records.map((r, i) => {
     const emp = employees.find(e => e.id === r.employeeId);
-    const base = Math.min(Math.max(+r.totalGross||0, 8000), 120000);
+    // Мінімальна база ЄСВ (МЗП) не застосовується до працівників з інвалідністю
+    // (для них ставка 8,41%). Максимальна база — 20 МЗП — діє для всіх.
+    const disabled = !!(r.hasDisability || emp?.hasDisability);
+    const gross = Math.max(+r.totalGross||0, 0);
+    const base = disabled
+      ? Math.min(gross, ESV_MAX_BASE)
+      : Math.min(Math.max(gross, MIN_WAGE), ESV_MAX_BASE);
     return `
     <ROW ROWNUM="${i+1}">
       <HTIN>${esc(emp?.rnokpp)}</HTIN>
-      <HKATO>1</HKATO>
+      <HKATO>${disabled ? PERSON_TYPE_DISABILITY : PERSON_TYPE_EMPLOYEE}</HKATO>
       <HKINDNDR>1</HKINDNDR>
       <HPERIOD>${month}.${year}</HPERIOD>
       <HSUM>${base.toFixed(2)}</HSUM>
-      <HMAXSUM>${(120000).toFixed(2)}</HMAXSUM>
+      <HMAXSUM>${ESV_MAX_BASE.toFixed(2)}</HMAXSUM>
       <HESVSUM>${(+r.esv||0).toFixed(2)}</HESVSUM>
     </ROW>`;
   }).join('');

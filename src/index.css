@@ -692,6 +692,14 @@ input::placeholder { color: var(--text-muted); }
   padding: 8px 12px;
 }
 
+/* Попередження про перевищення ліміту доходу / інші помилки обліку */
+.settings-msg--error {
+  color: #7f1d1d;
+  background: #fef2f2;
+  border-color: #fecaca;
+  font-weight: 500;
+}
+
 /* ── Trash view ───────────────────────────────────────────── */
 .view-trash .data-table td { vertical-align: middle; }
 
