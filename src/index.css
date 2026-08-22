@@ -1205,3 +1205,10 @@ body { font-size: 1rem; }
 .ctx-arrow { opacity: .45; }
 .ctx-sep { height: 1px; background: #e8eeec; margin: 4px 6px; }
 .ctx-submenu { position: absolute; left: 100%; top: -4px; margin-left: 2px; }
+/* Розшифровка під великою цифрою в stat-card */
+.stat-sub {
+  margin-top: 6px;
+  font-size: .78rem;
+  line-height: 1.5;
+  color: var(--text-muted, #64748b);
+}

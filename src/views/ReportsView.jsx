@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
+import { useFop } from '../context/FopContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
 import { TAX_STRATEGIES, ESV_AMOUNT } from '../utils/taxLogic';
 import { checkIncomeLimit } from '../utils/incomeLimits';
@@ -12,10 +13,11 @@ import { exportJSON, exportCSV } from '../utils/exportUtils';
 const ReportsView = () => {
   const { transactions, payrollRecords } = useData();
   const { settings }      = useSettings();
+  const { activeFop }     = useFop();
   const year              = new Date().getFullYear();
 
   const [dateStart, setDateStart] = useState(`${year}-01-01`);
-  const [dateEnd,   setDateEnd]   = useState(`${year}-12-31`);
+  const [dateEnd,   setDateEnd]   = useState(new Date().toISOString().slice(0, 10));
   const [generated, setGenerated] = useState(false);
 
   const report = useMemo(() => {
@@ -28,11 +30,28 @@ const ReportsView = () => {
     const expense = inRange.filter(t => t.type === 'expense').reduce((s,t) => s + (+t.amount||0), 0);
     const group   = TAX_GROUPS.find(g => g.id === settings.taxGroup);
 
-    // Кількість місяців у періоді — щомісячні платежі (ЄП груп 1-2, ВЗ, ЄСВ)
-    // множаться на неї, інакше річний звіт показував би один місяць.
-    const months = Math.max(1,
-      (+dateEnd.slice(0,4) - +dateStart.slice(0,4)) * 12
-      + (+dateEnd.slice(5,7) - +dateStart.slice(5,7)) + 1);
+    // Кількість місяців, за які реально виникло зобов'язання.
+    // Це перетин трьох меж, а не просто довжина обраного періоду:
+    //   1) обраний період;
+    //   2) не раніше місяця державної реєстрації ФОП;
+    //   3) не пізніше поточного місяця — майбутні місяці не нараховуємо,
+    //      бо ФОП може закритися або змінити групу.
+    const monthKey = (d) => d.slice(0, 7);
+    const monthDiff = (a, b) =>
+      (+b.slice(0,4) - +a.slice(0,4)) * 12 + (+b.slice(5,7) - +a.slice(5,7)) + 1;
+
+    const nowMonth  = monthKey(new Date().toISOString().slice(0, 10));
+    const regMonth  = activeFop?.registrationDate ? monthKey(activeFop.registrationDate) : null;
+
+    let mFrom = monthKey(dateStart);
+    let mTo   = monthKey(dateEnd);
+    if (regMonth && regMonth > mFrom) mFrom = regMonth;   // до реєстрації зобов'язань немає
+    if (mTo > nowMonth) mTo = nowMonth;                   // майбутнє не нараховуємо
+
+    const months = mTo >= mFrom ? monthDiff(mFrom, mTo) : 0;
+    const monthsNote =
+      months === 0 ? 'у межах періоду немає місяців із зобов\'язанням'
+      : `нараховано за ${months} міс. (${mFrom} … ${mTo})`;
 
     // Реальна стратегія по групі (з ЄСВ) замість спрощеного відсотка від доходу.
     const strategy = TAX_STRATEGIES[settings.taxGroup];
@@ -67,11 +86,12 @@ const ReportsView = () => {
       income, expense, net: income - expense,
       tax: totalAccrued, payrollTax, fopTax: calc.tax,
       breakdown: calc.breakdown, note: calc.note,
-      group: group?.label, count: inRange.length, rows: inRange, months, limitInfo,
+      group: group?.label, count: inRange.length, rows: inRange,
+      months, monthsNote, limitInfo,
       paidToBudget, budgetBalance: totalAccrued - paidToBudget,
       ledgerEntries: buildLedgerEntries(inRange),
     };
-  }, [generated, transactions, dateStart, dateEnd, settings]);
+  }, [generated, transactions, dateStart, dateEnd, settings, activeFop, payrollRecords]);
 
   const fmt = n => n.toLocaleString('uk-UA', { minimumFractionDigits: 2 }) + ' грн';
 
@@ -99,7 +119,7 @@ const ReportsView = () => {
         <div className="report-results">
           <div className="report-meta">
             {report.group} · {transactions.length} операцій усього · {report.count} за період
-            {report.months > 1 && ` · ${report.months} міс.`}
+            {report.months > 0 && ` · ${report.months} міс.`}
           </div>
 
           {report.limitInfo?.limit != null && report.limitInfo.level !== 'ok' && (
@@ -131,7 +151,20 @@ const ReportsView = () => {
             <div className="stat-card">
               <div className="stat-label">Податки і збори разом</div>
               <div className="stat-value" style={{color:'var(--warning)'}}>{fmt(report.tax)}</div>
+              <div className="stat-sub">
+                {report.breakdown?.singleTax != null && <div>ЄП — {fmt(report.breakdown.singleTax)}</div>}
+                {report.breakdown?.pdfo      != null && <div>ПДФО — {fmt(report.breakdown.pdfo)}</div>}
+                {report.breakdown?.vz        != null && <div>ВЗ — {fmt(report.breakdown.vz)}</div>}
+                {report.breakdown?.esv       != null && (
+                  <div>ЄСВ — {fmt(report.breakdown.esv)} <span className="cell-muted">({report.months} міс.)</span></div>
+                )}
+              </div>
             </div>
+          </div>
+
+          <div className="report-hint" style={{marginBottom:8}}>
+            {report.monthsNote}. Майбутні місяці не нараховуються: ФОП може закритися
+            або змінити групу до кінця року.
           </div>
 
           {!['general','general_vat'].includes(settings.taxGroup) && (

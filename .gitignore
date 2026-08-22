@@ -23,6 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 .env
-.CHANGES.diff
-.CHANGES2.diff
-
+CHANGES
