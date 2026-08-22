@@ -28,7 +28,12 @@ const WANTED = [
   { prefix: 'F01342', label: 'Додаток 2 (МПЗ) до декларації ЄП, 1 і 2 групи' },
   { prefix: 'F01002', label: 'Декларація про майновий стан і доходи' },
   { prefix: 'F12010', label: 'Податкова накладна' },
+  { prefix: 'F12011', label: 'Додаток 1 до податкової накладної' },
   { prefix: 'F12012', label: 'Розрахунок коригування до податкової накладної' },
+  { prefix: 'F05101', label: 'Додаток ФІЗ-Д1 до об\'єднаної звітності' },
+  { prefix: 'F05104', label: 'Додаток ФІЗ-4ДФ до об\'єднаної звітності' },
+  { prefix: 'F05105', label: 'Додаток ФІЗ-Д5 до об\'єднаної звітності' },
+  { prefix: 'F05106', label: 'Додаток ФІЗ-Д6 до об\'єднаної звітності' },
   { prefix: 'F05001', label: 'Податковий розрахунок (об\'єднана звітність), ФОП' },
   { prefix: 'J05001', label: 'Податковий розрахунок (об\'єднана звітність), юрособи' },
 ];
@@ -64,17 +69,34 @@ async function main() {
 
   // Структуру колонок не фіксуємо: шукаємо клітинку, що виглядає як ідентифікатор
   // форми, і беремо найдовшу текстову клітинку рядка як назву.
+  // Реєстр публікується з поламаним екрануванням лапок, тому розбираємо
+  // не як строгий CSV, а по рядках виду: "N,ІДЕНТИФІКАТОР,"додатки",назва,…
+  // Важливо: додатки (зокрема РК до ПН) перелічені в другій колонці
+  // основної форми, окремими записами вони не існують.
   const found = [];
-  for (const line of lines.slice(1)) {
-    const cells = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
-    const id = cells.find((c) => FORM_ID_RE.test(c));
-    if (!id) continue;
-    const want = WANTED.find((w) => id.startsWith(w.prefix));
-    if (!want) continue;
-    const name = cells
-      .filter((c) => c !== id && c.length > 10)
-      .sort((a, b) => b.length - a.length)[0] || want.label;
-    found.push({ id, group: want.prefix, label: want.label, officialName: name });
+  for (const line of lines) {
+    const m = line.match(/^"?\d+,([JF]\d{7}),(.*)$/);
+    if (!m) continue;
+    const [, id, rest] = m;
+    const clean = rest.replace(/""/g, '"');
+
+    // Ідентифікатори з рядка: сама форма + усі її додатки
+    const ids = [id, ...(clean.match(/[JF]\d{7}/g) || [])];
+    // Назва форми — найдовший фрагмент у лапках або між комами
+    const name = (clean.match(/"([^"]{15,300})"/g) || [])
+      .map((x) => x.replace(/"/g, ''))
+      .filter((x) => !/^[JF]\d{7}(,\s*[JF]\d{7})*$/.test(x.trim()))
+      .sort((a, b) => b.length - a.length)[0] || '';
+
+    for (const fid of new Set(ids)) {
+      const want = WANTED.find((w) => fid.startsWith(w.prefix));
+      if (!want) continue;
+      found.push({
+        id: fid, group: want.prefix, label: want.label,
+        officialName: fid === id ? name.trim() : `${want.label} (до ${id})`,
+        parent: fid === id ? null : id,
+      });
+    }
   }
 
   // На кожен префікс лишаємо найбільшу версію (останні дві цифри ідентифікатора)
@@ -90,11 +112,14 @@ async function main() {
     license: 'CC-BY 4.0',
     resource: res.name,
     syncedAt: new Date().toISOString().slice(0, 10),
-    forms: Object.fromEntries([...byPrefix.values()].map((f) => [f.id, {
-      label: f.label,
-      officialName: f.officialName,
-      schema: `${f.id}.xsd`,
-    }])),
+    forms: Object.fromEntries([...byPrefix.values()]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((f) => [f.id, {
+        label: f.label,
+        officialName: f.officialName,
+        parent: f.parent || undefined,
+        schema: `${f.id}.xsd`,
+      }])),
   };
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });

@@ -29,3 +29,7 @@ CHANGES
 *.XML
 *.xml
 !supabase/**/*.xml
+
+
+# Завантажені реєстри форм ДПС
+reestr_form_*.csv

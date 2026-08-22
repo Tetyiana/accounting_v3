@@ -105,6 +105,13 @@ export function buildDeclaration({
   r['15'] = 0; r['16'] = 0; r['17'] = 0; r['18'] = 0; r['19'] = 0; r['20'] = 0;
 
   // ── Додаток 1 + розділ VII: ЄСВ ──────────────────────────────────
+  // Додаток 1 «Відомості про суми нарахованого доходу застрахованих осіб
+  // та суми нарахованого єдиного внеску» подається у складі РІЧНОЇ декларації.
+  // У квартальних деклараціях групи 3 (І квартал, півріччя, три квартали)
+  // він не подається, і рядок 21 не заповнюється, бо його значення —
+  // це підсумок графи 4 розділу 9 Додатка 1.
+  const withAppendix1 = periodId === 4;
+
   const esvRows = MONTHS_UA.map((name, i) => {
     const active = monthsOnSimplified[i] !== false && i < upTo;
     const base   = active ? round2(esvBaseByMonth[i] ?? minWage) : 0;
@@ -116,7 +123,7 @@ export function buildDeclaration({
     };
   });
   const esvTotal = round2(esvRows.reduce((s, x) => s + x.amount, 0));
-  r['21'] = esvTotal;
+  r['21'] = withAppendix1 ? esvTotal : 0;
 
   // ── Розділ VIII: військовий збір ─────────────────────────────────
   // Груп 1, 2 — фіксований: МЗП × 10% × кількість місяців на спрощеній,
@@ -136,8 +143,9 @@ export function buildDeclaration({
   return {
     rows: r,
     period,
-    esvRows,
-    esvTotal,
+    withAppendix1,
+    esvRows: withAppendix1 ? esvRows : [],
+    esvTotal: withAppendix1 ? esvTotal : 0,
     vzMonthMarks,
     vzMonthsCount,
     meta: {
@@ -145,6 +153,9 @@ export function buildDeclaration({
       order: DECL_ORDER,
       // Гр. 1, 2 звітують раз на рік, гр. 3 — щокварталу
       isAnnualOnly: isG1 || isG2,
+      appendix1Id: (isG1 || isG2) ? 'F0134107' : 'F0133109',
+      appendix2Id: (isG1 || isG2) ? 'F0134207' : 'F0133209',
+      declFormId:  (isG1 || isG2) ? 'F0103407' : 'F0103309',
       insuredPersonCategory: '6', // ФОП на спрощеній системі (виноска 11 Додатка 1)
     },
   };

@@ -60,7 +60,7 @@ const colHead = () => `
  * @param {object} opts   { year, declType: 'Звітна'|'Звітна нова'|'Уточнююча', controlBody, kveds }
  */
 export function buildDeclarationHtml(decl, fop = {}, opts = {}) {
-  const { rows: r, period, esvRows, esvTotal, vzMonthMarks, meta } = decl;
+  const { rows: r, period, esvRows, esvTotal, vzMonthMarks, meta, withAppendix1 } = decl;
   const year = opts.year || new Date().getFullYear();
   const declType = opts.declType || 'Звітна';
   const empCount = opts.employeesCount ?? 0;
@@ -79,7 +79,7 @@ export function buildDeclarationHtml(decl, fop = {}, opts = {}) {
   <td style="width:55%"></td>
   <td class="hdr">
     ЗАТВЕРДЖЕНО<br>${esc(DECL_ORDER)}<br>
-    Ідентифікатор форми ${esc(DECL_FORM_ID)}
+    Ідентифікатор форми ${esc(meta.declFormId || DECL_FORM_ID)}
   </td>
 </tr></table>
 
@@ -208,6 +208,22 @@ export function buildDeclarationHtml(decl, fop = {}, opts = {}) {
   </tr>
 </table>
 
+<table style="margin-top:6px">
+  <tr><td colspan="2" class="b">До цієї податкової декларації додається:</td></tr>
+  <tr>
+    <td style="width:26px" class="c">${withAppendix1 ? 'X' : ''}</td>
+    <td>Додаток 1 «Відомості про суми нарахованого доходу застрахованих осіб
+        та суми нарахованого єдиного внеску» (${esc(meta.appendix1Id || '')})
+        ${withAppendix1 ? '' : '<span class="cap"> — подається лише у складі річної декларації</span>'}</td>
+  </tr>
+  <tr>
+    <td class="c"></td>
+    <td>Додаток 2 «Розрахунок загального мінімального податкового зобов'язання
+        за податковий (звітний) рік» (${esc(meta.appendix2Id || '')})
+        <span class="cap"> — лише для власників сільськогосподарських угідь</span></td>
+  </tr>
+</table>
+
 <div class="note">
   Показники заповнюються наростаючим підсумком з початку року у гривнях з двома
   десятковими знаками після коми. Форма — ${esc(DECL_ORDER)}.
@@ -224,7 +240,7 @@ export function buildDeclarationHtml(decl, fop = {}, opts = {}) {
   <td class="sum">${money(x.amount)}</td>
 </tr>`).join('');
 
-  const page3 = `
+  const page3 = !withAppendix1 ? '' : `
 <div class="pagebreak"></div>
 <table class="no-border"><tr>
   <td style="width:55%"></td>
