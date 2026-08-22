@@ -1,0 +1,164 @@
+diff --git a/package.json b/package.json
+index 2387e86..f831223 100644
+--- a/package.json
++++ b/package.json
+@@ -7,7 +7,8 @@
+     "dev": "vite",
+     "build": "vite build",
+     "lint": "eslint .",
+-    "preview": "vite preview"
++    "preview": "vite preview",
++    "check:schema": "node scripts/check-schema.mjs"
+   },
+   "dependencies": {
+     "@supabase/supabase-js": "^2.110.5",
+diff --git a/src/constants/payrollTypes.js b/src/constants/payrollTypes.js
+index 1b52225..d089cd9 100644
+--- a/src/constants/payrollTypes.js
++++ b/src/constants/payrollTypes.js
+@@ -4,8 +4,14 @@
+ export const PDFO_RATE   = 0.18;
+ export const VZ_RATE     = 0.05;
+ export const ESV_RATE    = 0.22;
++// Пільгова ставка ЄСВ для працівників з інвалідністю у роботодавця-ФОП
++// (ч. 13 ст. 8 ЗУ «Про збір та облік єдиного внеску» від 08.07.2010 № 2464-VI).
++export const ESV_RATE_DISABILITY = 0.0841;
+ export const MIN_WAGE    = 8647;   // мінімальна зарплата (грн, 2026 р.)
+-export const ESV_MAX_BASE = MIN_WAGE * 15;
++// Максимальна база нарахування ЄСВ — 20 МЗП (ст. 32 Закону про Держбюджет-2026
++// від 03.12.2025 № 4695-IX). До 2022 р. було 15 МЗП.
++export const ESV_MAX_BASE = MIN_WAGE * 20;   // 172 940 грн
++export const ESV_MIN_AMOUNT = Math.round(MIN_WAGE * ESV_RATE * 100) / 100; // 1 902,34
+ export const AVG_CALENDAR_DAYS = 29.3;
+ export const ANNUAL_LEAVE_DAYS = 24;
+ 
+@@ -15,6 +21,7 @@ export const INCOME_CODE_LEAVE     = '101'; // відпускні
+ export const INCOME_CODE_COMPENSATION = '101'; // компенсація відпустки
+ 
+ export const PERSON_TYPE_EMPLOYEE = '1';   // код категорії застрахованої особи
++export const PERSON_TYPE_DISABILITY = '2'; // код категорії ЗО для працівника з інвалідністю (Д1)
+ 
+ export const DEDUCTION_TYPES = [
+   { id: 'alimony',    label: 'Аліменти'         },
+@@ -48,11 +55,13 @@ export const EMPTY_EMPLOYEE = {
+   salary:           '',    // місячний оклад
+   iban:             '',
+   hireDate:         '',
+-  terminationDate:  null,
++  fireDate:         null,   // дата звільнення; наказ про звільнення пише сюди ж
+   isActive:         true,
+   leaveEntitlement: ANNUAL_LEAVE_DAYS,
+   leaveAccrued:     0,     // накопичено (к.д.)
+   leaveUsed:        0,     // використано (к.д.)
++  hasDisability:    false, // інвалідність підтверджена → ЄСВ 8,41%
++  disabilityDocDate: '',   // дата отримання витягу/довідки
+   notes:            '',
+   createdAt:        null,
+ };
+diff --git a/src/views/PayrollView.jsx b/src/views/PayrollView.jsx
+index 8a58ecc..4d532e0 100644
+--- a/src/views/PayrollView.jsx
++++ b/src/views/PayrollView.jsx
+@@ -30,6 +30,9 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
+     if (!form.fullName.trim()) { setErr('ПІБ обов\'язкове'); return; }
+     if (!form.rnokpp.trim() || form.rnokpp.replace(/\D/g,'').length !== 10) { setErr('РНОКПП — 10 цифр'); return; }
+     if (!form.hireDate) { setErr('Вкажіть дату прийому'); return; }
++    if (form.hasDisability && !form.disabilityDocDate) {
++      setErr('Для ставки ЄСВ 8,41% вкажіть дату витягу/довідки про інвалідність'); return;
++    }
+     setErr('');
+     onSave(form);
+   };
+@@ -70,7 +73,7 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
+         </div>
+         <div className="field">
+           <label>Дата звільнення</label>
+-          <input type="date" name="terminationDate" value={form.terminationDate || ''} onChange={set} />
++          <input type="date" name="fireDate" value={form.fireDate || ''} onChange={set} />
+         </div>
+       </div>
+       <div className="form-row-3">
+@@ -87,6 +90,28 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
+           <input type="number" name="leaveUsed" value={form.leaveUsed || 0} onChange={set} min="0" step="0.5" />
+         </div>
+       </div>
++      <div className="form-row-3">
++        <div className="field">
++          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
++            <input type="checkbox" name="hasDisability" checked={!!form.hasDisability} onChange={setCheck} />
++            Особа з інвалідністю (ЄСВ 8,41%)
++          </label>
++        </div>
++        {form.hasDisability && (
++          <div className="field">
++            <label>Дата витягу / довідки <span className="req">*</span></label>
++            <input type="date" name="disabilityDocDate" value={form.disabilityDocDate || ''} onChange={set} />
++          </div>
++        )}
++        {form.hasDisability && (
++          <div className="field">
++            <span className="cell-muted" style={{ fontSize: '.78rem' }}>
++              Пільгова ставка застосовується з дати отримання підтвердного документа.
++              Донарахування ЄСВ до мінімального внеску не робиться.
++            </span>
++          </div>
++        )}
++      </div>
+       <div className="form-actions">
+         <button className="btn btn--primary" onClick={handleSave}>Зберегти</button>
+         <button className="btn btn--ghost" onClick={onCancel}>Скасувати</button>
+@@ -115,12 +140,15 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) =>
+   const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || 100));
+   const [leaveDays, setLeaveDays] = useState(String(existingRecord?.leaveDays || 0));
+   const [compensationDays, setCompensationDays] = useState(String(existingRecord?.compensationDays || 0));
++  // Оголошення станів ВВР мають іти ДО unpaidCalendarDays: const не піднімається,
++  // читання unpaidStartDate вище за його useState кидало ReferenceError (TDZ)
++  // і рушило весь калькулятор нарахування.
++  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
+   const [unpaidEndDate, setUnpaidEndDate] = useState(existingRecord?.unpaidEndDate || '');
+   // к.д. = включно з...до; порожні дати → 0
+   const unpaidCalendarDays = (unpaidStartDate && unpaidEndDate && unpaidEndDate >= unpaidStartDate)
+     ? Math.round((new Date(unpaidEndDate) - new Date(unpaidStartDate)) / 86400000) + 1
+     : 0;
+-  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
+   const workingDaysInMonth = calcWorkingDaysInMonth(period);
+   const unpaidDays = calcWorkingDaysInRange(unpaidStartDate, +unpaidCalendarDays);
+   const [otherAccruals, setOtherAccruals] = useState(String(existingRecord?.otherAccruals || 0));
+@@ -143,10 +171,11 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) =>
+   const totalGross = round2(salaryAfterUnpaid + sickInfo.employerAmount + leaveAmt + compAmt + (+otherAccruals || 0));
+ 
+   const calc = useMemo(() => {
+-    if (mode === 'gross') return calcNetFromGross(totalGross, deductions, isFullMonth);
+-    const base = calcGrossFromNet(+netInput || 0, deductions, false); // неповний місяць при нетто-режимі
+-    return base || calcNetFromGross(0, deductions, isFullMonth);
+-  }, [mode, totalGross, netInput, deductions, isFullMonth]);
++    const esvOpts = { hasDisability: !!employee.hasDisability };
++    if (mode === 'gross') return calcNetFromGross(totalGross, deductions, isFullMonth, esvOpts);
++    const base = calcGrossFromNet(+netInput || 0, deductions, false, esvOpts); // неповний місяць при нетто-режимі
++    return base || calcNetFromGross(0, deductions, isFullMonth, esvOpts);
++  }, [mode, totalGross, netInput, deductions, isFullMonth, employee.hasDisability]);
+ 
+   const addDeduction = () => setDeductions(p => [
+     ...p, { id: Date.now().toString(), type: 'executive', label: 'Виконавчий лист', base: 'percent', value: '', amount: 0 }
+@@ -175,9 +204,10 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) =>
+       const salaryNet2 = round2(gInput - unpaid2.deduction);
+       const totalGross2 = round2(salaryNet2 + sick2.employerAmount + leave2 + comp2 + other);
+ 
++      const esvOpts2 = { hasDisability: !!employee.hasDisability };
+       const finalCalc = mode === 'gross'
+-        ? calcNetFromGross(totalGross2, deductions, fullMonth)
+-        : (calcGrossFromNet(+netInput || 0, deductions, false) || calcNetFromGross(0, deductions, fullMonth));
++        ? calcNetFromGross(totalGross2, deductions, fullMonth, esvOpts2)
++        : (calcGrossFromNet(+netInput || 0, deductions, false, esvOpts2) || calcNetFromGross(0, deductions, fullMonth, esvOpts2));
+ 
+       if (!finalCalc) { alert('Помилка розрахунку'); return; }
+ 
+@@ -207,6 +237,8 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) =>
+         netPay:               finalCalc.netPay,
+         esv:                  finalCalc.esv,
+         esvBase:              finalCalc.esvBase,
++        esvRate:              finalCalc.esvRate,
++        hasDisability:        !!employee.hasDisability,
+         status:               'draft',
+         notes,
+       });

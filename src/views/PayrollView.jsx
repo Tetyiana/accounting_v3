@@ -73,7 +73,7 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
         </div>
         <div className="field">
           <label>Дата звільнення</label>
-          <input type="date" name="terminationDate" value={form.terminationDate || ''} onChange={set} />
+          <input type="date" name="fireDate" value={form.fireDate || ''} onChange={set} />
         </div>
       </div>
       <div className="form-row-3">
@@ -140,12 +140,15 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || 100));
   const [leaveDays, setLeaveDays] = useState(String(existingRecord?.leaveDays || 0));
   const [compensationDays, setCompensationDays] = useState(String(existingRecord?.compensationDays || 0));
+  // Оголошення станів ВВР мають іти ДО unpaidCalendarDays: const не піднімається,
+  // читання unpaidStartDate вище за його useState кидало ReferenceError (TDZ)
+  // і рушило весь калькулятор нарахування.
+  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
   const [unpaidEndDate, setUnpaidEndDate] = useState(existingRecord?.unpaidEndDate || '');
   // к.д. = включно з...до; порожні дати → 0
   const unpaidCalendarDays = (unpaidStartDate && unpaidEndDate && unpaidEndDate >= unpaidStartDate)
     ? Math.round((new Date(unpaidEndDate) - new Date(unpaidStartDate)) / 86400000) + 1
     : 0;
-  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
   const workingDaysInMonth = calcWorkingDaysInMonth(period);
   const unpaidDays = calcWorkingDaysInRange(unpaidStartDate, +unpaidCalendarDays);
   const [otherAccruals, setOtherAccruals] = useState(String(existingRecord?.otherAccruals || 0));

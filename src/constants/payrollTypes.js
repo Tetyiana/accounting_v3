@@ -55,7 +55,7 @@ export const EMPTY_EMPLOYEE = {
   salary:           '',    // місячний оклад
   iban:             '',
   hireDate:         '',
-  terminationDate:  null,
+  fireDate:         null,   // дата звільнення; наказ про звільнення пише сюди ж
   isActive:         true,
   leaveEntitlement: ANNUAL_LEAVE_DAYS,
   leaveAccrued:     0,     // накопичено (к.д.)
