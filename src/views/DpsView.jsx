@@ -3,6 +3,8 @@ import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
 import { ESV_AMOUNT } from '../utils/taxLogic';
+import { buildDeclaration } from '../utils/dpsDeclaration';
+import { buildDeclarationHtml } from '../utils/dpsDeclarationPrint';
 import { checkIncomeLimit } from '../utils/incomeLimits';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
@@ -76,101 +78,52 @@ const DpsView = () => {
     ? `Податкова декларація платника єдиного податку — ФОП (III група) за ${period.label.toLowerCase()} ${selYear} р.`
     : `Податкова декларація платника єдиного податку — ФОП (${group === '1' ? 'I' : 'II'} група) за ${selYear} рік`;
 
+  // Друк офіційної форми декларації (наказ Мінфіну від 19.06.2015 № 578
+  // у редакції наказу від 31.01.2025 № 57, ідентифікатор форми F0103309).
+  // Розрахунок рядків 01-29 — у src/utils/dpsDeclaration.js, верстка — у
+  // src/utils/dpsDeclarationPrint.js. Довільної нумерації тут більше немає.
   const handlePrint = () => {
-    // Офіційна форма декларації (наказ Мінфіну від 19.06.2015 №578
-    // у редакції наказу від 09.12.2020 №752 з подальшими змінами).
-    // Структура: розділи І–VI; заповнюємо II, IV — інші лишаємо порожніми як формою.
-    const groupLabel = group === '1' ? 'І' : group === '2' ? 'ІІ' : group === '3_3_vat' ? 'ІІІ (платник ПДВ, 3%)' : 'ІІІ (5%)';
     const employeesCount = (employees || []).filter(e => e.isActive !== false).length;
 
-    const secIV_g3 = `
-<tr><td>07</td><td>Сума доходу за податковий (звітний) період, оподаткована за ставкою ${(epRate*100).toFixed(0)}%</td><td align="right">${fmtMoney(incomeCumulative)}</td></tr>
-<tr><td>08</td><td>Сума доходу, що перевищує граничний обсяг (оподаткування за ставкою 15%)</td><td align="right">${fmtMoney(limitInfo.excess || 0)}</td></tr>
-<tr><td>09</td><td>Сума єдиного податку за податковий (звітний) період (р.07 × ставка + р.08 × 15%)</td><td align="right"><b>${fmtMoney(round2(epCumulative + (limitInfo.excessTax || 0)))}</b></td></tr>
-<tr><td>10</td><td>Сума єдиного податку за попередній звітний період (наростаючим)</td><td align="right">${fmtMoney(epPrev)}</td></tr>
-<tr><td>11</td><td><b>Сума єдиного податку, яка підлягає сплаті за останній квартал</b> (р.09 − р.10)</td><td align="right"><b>${fmtMoney(epToPay)}</b></td></tr>
-<tr><td>12</td><td>Сума військового збору (р.07 × 1%) наростаючим</td><td align="right">${fmtMoney(vzCumulative)}</td></tr>
-<tr><td>13</td><td>Сума ВЗ, нарахована за попередній звітний період</td><td align="right">${fmtMoney(vzPrev)}</td></tr>
-<tr><td>14</td><td><b>Сума ВЗ, яка підлягає сплаті за останній квартал</b> (р.12 − р.13)</td><td align="right"><b>${fmtMoney(vzToPay)}</b></td></tr>`;
+    // Перевищення граничного обсягу відносимо на місяць, у якому воно виникло
+    const excessByMonth = (() => {
+      const arr = Array(12).fill(0);
+      const limit = limitInfo.limit;
+      if (limit == null) return arr;
+      let acc = 0;
+      incomeByMonth.forEach((v, i) => {
+        const before = acc;
+        acc = round2(acc + v);
+        // Перевищенням вважаємо ту частину доходу місяця, що вийшла за ліміт
+        if (acc > limit) arr[i] = round2(acc - Math.max(limit, before));
+      });
+      return arr;
+    })();
 
-    const secIV_g12 = `
-<tr><td>01</td><td>Обсяг доходу за звітний рік</td><td align="right"><b>${fmtMoney(incomeCumulative)}</b></td></tr>
-<tr><td>02</td><td>Сума доходу, що перевищує граничний обсяг (оподаткування за ставкою 15%)</td><td align="right">${fmtMoney(limitInfo.excess || 0)}</td></tr>
-<tr><td>03</td><td>Щомісячний авансовий внесок ЄП</td><td align="right">${fmtMoney(epFixed)}</td></tr>
-<tr><td>04</td><td><b>Сума ЄП за рік (12 місяців)</b></td><td align="right"><b>${fmtMoney(round2(epFixed * 12))}</b></td></tr>
-<tr><td>05</td><td>Щомісячний авансовий внесок ВЗ (10% × МЗП)</td><td align="right">${fmtMoney(vzFixed)}</td></tr>
-<tr><td>06</td><td><b>Сума ВЗ за рік (12 місяців)</b></td><td align="right"><b>${fmtMoney(round2(vzFixed * 12))}</b></td></tr>`;
+    // Місяці перебування на спрощеній системі: від реєстрації ФОП до поточного
+    const regMonth = activeFop?.registrationDate
+      ? (+activeFop.registrationDate.slice(0, 4) === selYear ? +activeFop.registrationDate.slice(5, 7) : 1)
+      : 1;
+    const lastMonth = selYear === new Date().getFullYear() ? new Date().getMonth() + 1 : 12;
+    const monthsOnSimplified = Array.from({ length: 12 },
+      (_, i) => i + 1 >= regMonth && i + 1 <= lastMonth);
 
-    const html = `<!DOCTYPE html><html lang="uk"><head><meta charset="UTF-8"><title>Декларація ЄП</title>
-<style>body{font-family:Arial,sans-serif;font-size:11.5px;margin:20mm;color:#111;line-height:1.4}
-h2{font-size:14px;text-align:center;margin:0 0 4px}
-h3{font-size:11.5px;margin:14px 0 6px;background:#e8e8e8;padding:4px 6px;border:1px solid #333}
-table{width:100%;border-collapse:collapse;margin:4px 0}
-td,th{border:1px solid #333;padding:4px 6px;vertical-align:top}
-th{background:#f0f0f0;font-weight:600;text-align:center}
-.nb td{border:none;padding:2px 4px}
-.center{text-align:center}
-.bx{display:inline-block;width:14px;height:14px;border:1px solid #333;text-align:center;line-height:14px;margin-right:4px;font-weight:600}
-@media print{body{margin:12mm}}</style></head><body>
+    const decl = buildDeclaration({
+      incomeByMonth, excessByMonth,
+      taxGroup: group,
+      periodId: isG3 ? selQ : 4,
+      minWage: MIN_WAGE,
+      monthsOnSimplified,
+      esvBaseByMonth: Array(12).fill(MIN_WAGE),
+      prevRow12: 0,
+      prevRow23: 0,
+    });
 
-<div class="nb" style="display:flex;justify-content:space-between;margin-bottom:4px">
-  <div>Форма затверджена наказом Мінфіну від 19.06.2015 №578<br>(у редакції наказу від 09.12.2020 №752)</div>
-  <div style="text-align:right">Код за ЄДРПОУ ДПС ${activeFop?.dpsCode || '____'}</div>
-</div>
-
-<h2>ПОДАТКОВА ДЕКЛАРАЦІЯ<br>платника єдиного податку — фізичної особи-підприємця</h2>
-
-<table class="nb" style="margin-top:4px">
-<tr><td width="55%">1. Тип декларації:</td>
-    <td><span class="bx">×</span> звітна &nbsp; <span class="bx"></span> звітна нова &nbsp; <span class="bx"></span> уточнююча</td></tr>
-<tr><td>2. Звітний (податковий) період:</td>
-    <td>${isG3 ? `${period.label} ${selYear} р.` : `${selYear} р.`}${isG3 ? ' (наростаючим підсумком)' : ''}</td></tr>
-<tr><td>3. Уточнюваний період:</td><td>—</td></tr>
-</table>
-
-<h3>Розділ І. Загальні відомості</h3>
-<table>
-<tr><td width="35%">Платник податку</td><td><b>ФОП ${activeFop?.fullName || ''}</b></td></tr>
-<tr><td>Реєстраційний номер облікової картки платника податків (РНОКПП)</td><td>${activeFop?.rnokpp || ''}</td></tr>
-<tr><td>Податкова адреса</td><td>${activeFop?.legalAddress || ''}</td></tr>
-<tr><td>Контролюючий орган (ДПІ)</td><td>${activeFop?.dpsName || activeFop?.legalAddress || ''}</td></tr>
-<tr><td>Основний КВЕД</td><td>${(activeFop?.mainKved || '').replace(/,/g, '.')}</td></tr>
-<tr><td>Група єдиного податку</td><td><b>${groupLabel}</b></td></tr>
-</table>
-
-<h3>Розділ ІІ. Показники господарської діяльності</h3>
-<table>
-<tr><td>Обсяг доходу за звітний період${isG3 ? ' (наростаючим)' : ''}</td><td align="right"><b>${fmtMoney(incomeCumulative)} грн</b></td></tr>
-${isG3 ? `<tr><td>у т.ч. за останній квартал</td><td align="right">${fmtMoney(incomeCumulative - incomePrevPeriod)} грн</td></tr>` : ''}
-</table>
-
-<h3>Розділ ІІІ. Відомості про наявність (відсутність) найманих працівників</h3>
-<p style="margin:6px 0">Середньооблікова кількість найманих працівників за звітний період: <b>${employeesCount}</b></p>
-
-<h3>Розділ IV. Розрахунок податкових зобов'язань</h3>
-<table>
-<thead><tr><th width="45">Код рядка</th><th>Назва показника</th><th width="130">Сума, грн</th></tr></thead>
-<tbody>${isG3 ? secIV_g3 : secIV_g12}</tbody>
-</table>
-
-<h3>Розділ V. Визначення сум ЄП, що збільшують / зменшують зобов'язання за самостійно виявлені помилки</h3>
-<p style="margin:6px 0;font-style:italic;color:#666">Не заповнюється (виправлення помилок відсутні).</p>
-
-<h3>Розділ VI. Штрафи і пеня</h3>
-<p style="margin:6px 0;font-style:italic;color:#666">Не заповнюється.</p>
-
-<h3>Єдиний внесок на загальнообов'язкове державне соцстрахування (ЄСВ) за себе</h3>
-<table>
-<tr><td>Мінімальний ЄСВ на місяць (22% × МЗП ${fmtMoney(MIN_WAGE)})</td><td align="right">${fmtMoney(ESV_AMOUNT)} грн</td></tr>
-<tr><td><b>ЄСВ за ${isG3 ? 'останній квартал (3 міс.)' : 'рік (12 міс.)'}</b></td><td align="right"><b>${fmtMoney(esvPeriod)} грн</b></td></tr>
-</table>
-<p style="font-size:10px;color:#666;margin:6px 0">Довідково: помісячний дохід — ${incomeByMonth.map((v, i) => v ? `${i + 1}міс ${fmtMoney(v)}` : '').filter(Boolean).join('; ') || 'надходжень немає'}.</p>
-
-<div style="margin-top:24px;display:flex;justify-content:space-between">
-  <div>Дата подання: ${new Date().toLocaleDateString('uk-UA')}</div>
-  <div style="text-align:right">ФОП ${activeFop?.fullName || ''}<br><div id="fax-slot"></div>_______________________<br><small>(підпис)</small></div>
-</div>
-</body></html>`;
+    const html = buildDeclarationHtml(decl, activeFop || {}, {
+      year: selYear,
+      employeesCount,
+      kveds: [activeFop?.mainKved, activeFop?.additionalKveds].filter(Boolean).join(', '),
+    });
     openPrintWindow(html, { fop: activeFop });
   };
 

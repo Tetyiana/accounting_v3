@@ -4,6 +4,7 @@ import { useFop } from '../context/FopContext';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
 import { buildPnXml, buildRkXml, downloadXml } from '../utils/xmlDps';
+import { buildTaxInvoiceHtml } from '../utils/taxInvoicePrint';
 
 // Модуль ПДВ: реєстр виданих/отриманих ПН і РК, місячний розрахунок,
 // друкована декларація з ПДВ + XML-експорт ПН для е-кабінету.
@@ -24,6 +25,15 @@ const CREDIT_ROW = { 20: 'Р.10.1', 14: 'Р.10.2', 7: 'Р.10.3', 0: 'Р.10.4' };
 
 const VatView = () => {
   const { vatInvoices, addVatInvoice, updateVatInvoice, deleteVatInvoice } = useData();
+
+  const handlePrintPn = (v) => {
+    const html = buildTaxInvoiceHtml({
+      ...v,
+      // amount у застосунку — база оподаткування без ПДВ
+      description: v.description || v.counterparty,
+    }, activeFop || {});
+    openPrintWindow(html, { fop: activeFop });
+  };
   const { activeFop } = useFop();
   const [tab, setTab] = useState('outgoing');
   const [period, setPeriod] = useState(thisMonth());
@@ -303,6 +313,10 @@ ${creditRows || '<tr><td>Р.10 Податковий кредит</td><td align="
                   ) : tab === 'outgoing' && v.kind === 'rk' ? (
                     <button className="btn-icon" title="XML РК для ЄРПН" onClick={() => exportRkXml(v)}>⬇</button>
                   ) : null}
+                  {tab === 'outgoing' && v.kind !== 'rk' && (
+                    <button className="btn-icon" title="Друк податкової накладної"
+                      onClick={() => handlePrintPn(v)}>🖨</button>
+                  )}
                   {tab === 'outgoing' && !v.registered && (
                     <button className="btn-icon" title="Позначити як зареєстровану в ЄРПН"
                       onClick={() => toggleRegistered(v)}>✓</button>

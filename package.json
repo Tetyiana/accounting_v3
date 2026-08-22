@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:schema": "node scripts/check-schema.mjs"
+    "check:schema": "node scripts/check-schema.mjs",
+    "sync:forms": "node scripts/sync-dps-forms.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.5",

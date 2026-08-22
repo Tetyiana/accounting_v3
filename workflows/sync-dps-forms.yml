@@ -1,0 +1,61 @@
+name: Перевірка ідентифікаторів форм ДПС
+
+# Реєстр електронних форм ДПС на data.gov.ua оновлюється щомісяця.
+# Workflow тягне актуальний реєстр, оновлює src/constants/dpsForms.json
+# і, якщо ідентифікатори в коді застаріли, створює issue.
+
+on:
+  schedule:
+    - cron: '0 6 5 * *'   # 5 числа кожного місяця, 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Синхронізувати довідник форм
+        id: sync
+        run: |
+          set +e
+          node scripts/sync-dps-forms.mjs | tee /tmp/sync.log
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Закомітити оновлений довідник
+        run: |
+          if git diff --quiet -- src/constants/dpsForms.json; then
+            echo "Змін немає."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/constants/dpsForms.json
+          git commit -m "Оновлено довідник форм ДПС з реєстру відкритих даних"
+          git push
+
+      - name: Створити issue, якщо форми в коді застаріли
+        if: steps.sync.outputs.code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.readFileSync('/tmp/sync.log', 'utf8');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Застарілі ідентифікатори форм ДПС у xmlDps.js',
+              body: 'Щомісячна перевірка реєстру ДПС виявила розбіжність.\n\n'
+                  + '```\n' + log + '\n```\n\n'
+                  + 'Джерело: https://data.gov.ua/dataset/9ea3566a-ce8e-47ca-bca1-8d2f625d1354',
+              labels: ['законодавство'],
+            });

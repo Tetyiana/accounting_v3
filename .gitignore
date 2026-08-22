@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 .env
 CHANGES
+
+# Вивантажені XML і файли для е-кабінету
+*.XML
+*.xml
+!supabase/**/*.xml
