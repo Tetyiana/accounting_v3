@@ -41,6 +41,7 @@ export const DataProvider = ({ fopId, children }) => {
   const [products,       setProducts]       = useState([]);
   const [trash,          setTrash]          = useState([]);
   const [contracts,      setContracts]      = useState([]);
+  const [declarations,   setDeclarations]   = useState([]);
   const [loading,        setLoading]        = useState(true);
 
   useEffect(() => {
@@ -62,7 +63,8 @@ export const DataProvider = ({ fopId, children }) => {
       dbSelect('products',        { fopId }),
       dbSelect('trash',           { fopId }),
       dbSelect('contracts',       { fopId }),
-    ]).then(([tx, mv, db_, vat, inv, ac, pay, emp, pr, lv, hro, cl, prod, tr, contr]) => {
+      dbSelect('declarations',    { fopId }),
+    ]).then(([tx, mv, db_, vat, inv, ac, pay, emp, pr, lv, hro, cl, prod, tr, contr, decl]) => {
       if (!alive) return;
       setTransactions(tx);
       setMovements(mv);
@@ -79,6 +81,7 @@ export const DataProvider = ({ fopId, children }) => {
       setProducts(prod);
       setTrash(tr.map(trashFromRow));
       setContracts(contr);
+      setDeclarations(decl);
       setLoading(false);
     });
     return () => { alive = false; };
@@ -167,6 +170,36 @@ export const DataProvider = ({ fopId, children }) => {
     setVatInvoices(p => [...p, item]); dbInsert('vat_invoices', item);
     return item;
   }, [fopId, mk]);
+
+  // ─── Журнал поданих декларацій ───────────────────────────────
+  // Декларація заповнюється наростаючим підсумком, тому рядок 13 наступного
+  // періоду = рядок 12 попереднього, а рядок 24 = рядок 23. Фіксуємо при друку
+  // чи вивантаженні: один запис на рік+період, повторна дія його оновлює.
+  const saveDeclaration = useCallback((decl) => {
+    const key = (d) => `${d.year}-${d.periodId}`;
+    const existing = declarations.find(d => key(d) === key(decl));
+    if (existing) {
+      const patch = { ...decl, updatedAt: new Date().toISOString() };
+      setDeclarations(p => p.map(d => d.id === existing.id ? { ...d, ...patch } : d));
+      dbUpdate('declarations', existing.id, stripMeta(patch));
+      return { ...existing, ...patch };
+    }
+    const row = mk({ ...decl, source: decl.source || 'auto' });
+    setDeclarations(p => [...p, row]);
+    dbInsert('declarations', row);
+    return row;
+  }, [declarations, mk]);
+
+  const deleteDeclaration = useCallback((id) => {
+    setDeclarations(p => p.filter(d => d.id !== id));
+    dbDelete('declarations', id);
+  }, []);
+
+  // Показники попереднього періоду того самого року (для рядків 13 і 24)
+  const getPrevDeclaration = useCallback((year, periodId) => {
+    if (periodId <= 1) return null;
+    return declarations.find(d => +d.year === +year && +d.periodId === periodId - 1) || null;
+  }, [declarations]);
 
   const updateVatInvoice = useCallback((id, patch) => {
     setVatInvoices(p => p.map(v => v.id === id ? { ...v, ...patch } : v));
@@ -584,6 +617,7 @@ export const DataProvider = ({ fopId, children }) => {
       movements,     addMovement,       deleteMovement,
       debts,         addDebt,   updateDebt,   deleteDebt,
       vatInvoices,   addVatInvoice,     updateVatInvoice,  deleteVatInvoice,
+      declarations,  saveDeclaration,   deleteDeclaration, getPrevDeclaration,
       invoices,      addInvoice, updateInvoice, deleteInvoice,
       acts,          addAct,     updateAct,     deleteAct,
       payments,      addPayment,        deletePayment,

@@ -23,7 +23,10 @@ const QUARTERS = [
 ];
 
 const DpsView = () => {
-  const { transactions, employees, payrollRecords } = useData();
+  const {
+    transactions, employees, payrollRecords,
+    declarations, saveDeclaration, getPrevDeclaration,
+  } = useData();
   const { settings } = useSettings();
   const { activeFop } = useFop();
   const year = new Date().getFullYear();
@@ -58,6 +61,17 @@ const DpsView = () => {
     () => round2(incomeByMonth.reduce((s, v) => s + v, 0)), [incomeByMonth]);
   const limitInfo = useMemo(
     () => checkIncomeLimit(incomeYear, group, selYear), [incomeYear, group, selYear]);
+
+  // Період, за який складається декларація: гр. 3 — квартал, гр. 1 і 2 — рік
+  const declPeriodId = isG3 ? selQ : 4;
+
+  // Показники попередньої декларації того самого року → рядки 13 і 24.
+  // Якщо запису немає (програму почали вести з середини року) — 0,
+  // і користувач може вписати суму руками.
+  const prevDecl = getPrevDeclaration(selYear, declPeriodId);
+  const [manualPrev, setManualPrev] = useState({ row12: '', row23: '' });
+  const prevRow12 = prevDecl ? +prevDecl.row12 || 0 : (+manualPrev.row12 || 0);
+  const prevRow23 = prevDecl ? +prevDecl.row23 || 0 : (+manualPrev.row23 || 0);
 
   const period = QUARTERS.find(q => q.id === selQ) || QUARTERS[0];
   const incomeCumulative = round2(incomeByMonth.slice(0, period.months[1]).reduce((s, v) => s + v, 0));
@@ -111,12 +125,29 @@ const DpsView = () => {
     const decl = buildDeclaration({
       incomeByMonth, excessByMonth,
       taxGroup: group,
-      periodId: isG3 ? selQ : 4,
+      periodId: declPeriodId,
       minWage: MIN_WAGE,
       monthsOnSimplified,
       esvBaseByMonth: Array(12).fill(MIN_WAGE),
-      prevRow12: 0,
-      prevRow23: 0,
+      prevRow12,
+      prevRow23,
+    });
+
+    // Фіксуємо показники: наступний період візьме звідси рядки 13 і 24
+    saveDeclaration({
+      year: selYear,
+      periodId: declPeriodId,
+      taxGroup: group,
+      formId: decl.meta.declFormId,
+      row12: decl.rows['12'],
+      row14: decl.rows['14'],
+      row21: decl.rows['21'],
+      row22: decl.rows['22'],
+      row23: decl.rows['23'],
+      row25: decl.rows['25'],
+      income: decl.rows['08'],
+      rowsJson: decl.rows,
+      source: 'auto',
     });
 
     const html = buildDeclarationHtml(decl, activeFop || {}, {
@@ -193,6 +224,83 @@ const DpsView = () => {
           {limitInfo.excess > 0 && (
             <> ЄП з перевищення (15%): <b>{fmtMoney(limitInfo.excessTax)}</b> грн.</>
           )}
+        </div>
+      )}
+
+      {declPeriodId > 1 && (
+        <div className="settings-section">
+          <h3>Показники попереднього періоду</h3>
+          <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 0 }}>
+            Декларація заповнюється наростаючим підсумком з початку року.
+            Рядок 13 дорівнює рядку 12 попередньої декларації, рядок 24 — рядку 23.
+          </p>
+
+          {prevDecl ? (
+            <div className="settings-msg">
+              Взято з декларації за {QUARTERS.find(q => q.id === declPeriodId - 1)?.label || 'попередній період'} {selYear} р.
+              {prevDecl.source === 'manual' && ' (введено вручну)'}
+              <div style={{ marginTop: 4 }}>
+                Рядок 12 — <b>{fmtMoney(prevDecl.row12)}</b> грн
+                {isG3 && <> · рядок 23 — <b>{fmtMoney(prevDecl.row23)}</b> грн</>}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="settings-msg" style={{ marginBottom: 8 }}>
+                ⚠ Декларації за попередній період у програмі немає. Якщо вона подавалася —
+                впишіть суми з неї, інакше рядок 14 буде завищений на все, що вже сплачено.
+              </div>
+              <div className="form-row-3">
+                <div className="field">
+                  <label>Рядок 12 попередньої декларації (ЄП нараховано всього)</label>
+                  <input type="number" step="0.01" min="0" value={manualPrev.row12}
+                    onChange={e => setManualPrev(p => ({ ...p, row12: e.target.value }))}
+                    placeholder="0.00" />
+                </div>
+                {isG3 && (
+                  <div className="field">
+                    <label>Рядок 23 попередньої декларації (ВЗ нараховано)</label>
+                    <input type="number" step="0.01" min="0" value={manualPrev.row23}
+                      onChange={e => setManualPrev(p => ({ ...p, row23: e.target.value }))}
+                      placeholder="0.00" />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {declarations.filter(d => +d.year === +selYear).length > 0 && (
+        <div className="settings-section">
+          <h3>Зафіксовані декларації за {selYear} рік</h3>
+          <table className="data-table">
+            <thead><tr>
+              <th>Період</th><th className="r">Дохід (р. 08)</th>
+              <th className="r">ЄП нараховано (р. 12)</th>
+              <th className="r">ЄП до сплати (р. 14)</th>
+              <th className="r">ВЗ (р. 23)</th>
+            </tr></thead>
+            <tbody>
+              {declarations
+                .filter(d => +d.year === +selYear)
+                .sort((a, b) => a.periodId - b.periodId)
+                .map(d => (
+                  <tr key={d.id}>
+                    <td>{QUARTERS.find(q => q.id === d.periodId)?.label || d.periodId}
+                        {d.source === 'manual' && <span className="cell-muted"> (вручну)</span>}</td>
+                    <td className="r">{fmtMoney(d.income)}</td>
+                    <td className="r">{fmtMoney(d.row12)}</td>
+                    <td className="r">{fmtMoney(d.row14)}</td>
+                    <td className="r">{fmtMoney(d.row23)}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+          <p className="cell-muted" style={{ fontSize: '.78rem' }}>
+            Запис створюється або оновлюється щоразу, коли ви друкуєте декларацію
+            за відповідний період.
+          </p>
         </div>
       )}
 
