@@ -2,8 +2,8 @@
   "source": "https://data.gov.ua/dataset/9ea3566a-ce8e-47ca-bca1-8d2f625d1354",
   "sourceName": "Реєстр електронних форм податкових документів, ДПС України",
   "license": "CC-BY 4.0",
-  "resource": "reestr_form_2026-08-01_deklar.csv",
-  "syncedAt": "2026-08-22",
+  "resource": "reestr_form_2026-09-01_deklar.csv",
+  "syncedAt": "2026-09-05",
   "forms": {
     "F0100215": {
       "label": "Декларація про майновий стан і доходи",
