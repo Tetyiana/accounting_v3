@@ -63,8 +63,9 @@ const HomeView = ({ setActiveTab }) => {
   const deadlines = useMemo(() => buildDeadlines({
     taxGroup: settings.taxGroup,
     isVatPayer: settings.isVatPayer,
+    esvExempt: !!activeFop?.esvExempt,
     payrollRecords, employees,
-  }).slice(0, 8), [settings.taxGroup, settings.isVatPayer, payrollRecords, employees]);
+  }).slice(0, 8), [settings.taxGroup, settings.isVatPayer, activeFop?.esvExempt, payrollRecords, employees]);
   const today = new Date();
   const greeting = today.getHours() < 12 ? 'Доброго ранку' :
                    today.getHours() < 17 ? 'Добрий день' : 'Добрий вечір';
