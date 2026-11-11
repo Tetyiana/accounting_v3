@@ -47,6 +47,14 @@ export const buildPartyIndex = ({ acts = [], invoices = [], payments = [] }) => 
 
   // Чия це операція: { side: 'customer' | 'supplier', key, name } або null
   const partyOfTx = (t) => {
+    // Рахунок обрано вручну: 36 / 63 — це розрахунки з контрагентом операції, навіть без документів;
+    // будь-який інший — операція до розрахунків з покупцями і постачальниками не належить.
+    if (t.ledgerAccount) {
+      if (t.ledgerAccount !== '36' && t.ledgerAccount !== '63') return null;
+      const linked = invoiceOfTx(t);
+      const name = linked?.clientName || t.counterparty || '';
+      return { side: t.ledgerAccount === '36' ? 'customer' : 'supplier', key: partyKey(name), name };
+    }
     const inv = invoiceOfTx(t);
     if (inv) {
       const name = inv.clientName || t.counterparty || '';

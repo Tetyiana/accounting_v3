@@ -9,7 +9,8 @@ import { isOwnTaxPayment } from '../utils/generalSystem';
 import { checkIncomeLimit } from '../utils/incomeLimits';
 
 const round2 = n => Math.round((+n || 0) * 100) / 100;
-import { buildLedgerEntries } from '../utils/accountingLogic';
+import { buildLedgerEntries, corrAccountOf } from '../utils/accountingLogic';
+import { buildPartyIndex } from '../utils/settlements';
 import { exportJSON, exportCSV } from '../utils/exportUtils';
 
 const ReportsView = () => {
@@ -81,10 +82,12 @@ const ReportsView = () => {
     const limitInfo = checkIncomeLimit(yearIncome, settings.taxGroup, limitYear);
 
     // Стан розрахунків з бюджетом: порівнюємо нараховане з фактично сплаченим
-    // (за операціями в журналі, де контрагент — ДПС/Казначейство/ПФУ).
-    const BUDGET_RE = /дпс|казначей|пфу|пенсійн/i;
+    // (за операціями Банк/Каса з рахунком 64 або 65).
+    // Сплачене — це списання з кореспондуючим рахунком 64 (податки) або 65 (ЄСВ):
+    // обраним вручну в Банк/Каса або визначеним автоматично.
+    const partyIdx = buildPartyIndex({ acts, invoices, payments });
     const paidToBudget = inRange
-      .filter(t => t.type === 'expense' && BUDGET_RE.test(t.counterparty || ''))
+      .filter(t => t.type === 'expense' && ['64', '65'].includes(corrAccountOf(t, partyIdx)))
       .reduce((s,t) => s + (+t.amount||0), 0);
 
     // Зарплатні податки (ПДФО+ВЗ+ЄСВ) з нарахувань періоду — нараховані

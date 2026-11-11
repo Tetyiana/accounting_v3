@@ -7,7 +7,7 @@ import { incomeLimitFor, checkIncomeLimit } from '../src/utils/incomeLimits.js';
 import { buildDeadlines } from '../src/utils/deadlines.js';
 import { calcGeneralYear, isOwnTaxPayment } from '../src/utils/generalSystem.js';
 import { calcNetFromGross } from '../src/utils/payrollLogic.js';
-import { buildLedgerEntries } from '../src/utils/accountingLogic.js';
+import { buildLedgerEntries, suggestCorrAccount } from '../src/utils/accountingLogic.js';
 import { buildSettlements, partyKey } from '../src/utils/settlements.js';
 import { computeAutoDebts } from '../src/utils/documentLogic.js';
 
@@ -153,5 +153,25 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(d('Аванс одержано').amount, 700); assert.equal(d('Аванс одержано').type, 'creditor');
   assert.equal(d('Рах. №2').amount, 300);
   assert.ok(!d('Акт №1') && !d('Акт №77'));
+}
+// ── Кореспондуючий рахунок операцій банку ──
+{
+  const acc = (t) => suggestCorrAccount({ type: 'expense', amount: 1, ...t }, {});
+  assert.equal(acc({ counterparty: 'ГУК у Київ.обл/Боярська тг/18050400', description: 'єдиний податок за 3 кв' }), '64');
+  assert.equal(acc({ counterparty: 'ГУ ДПС у Київській області', description: 'ЄСВ за себе 3 кв 2026' }), '65');
+  assert.equal(acc({ counterparty: 'Казначейство України', description: 'військовий збір' }), '64');
+  assert.equal(acc({ counterparty: 'ТОВ Постач', description: 'оплата за товар, у т.ч. ПДВ 200,00' }), '84');
+  assert.equal(acc({ counterparty: 'Петренко І.', description: 'Зарплата за жовтень' }), '66');
+  assert.equal(acc({ counterparty: 'Банк', description: 'сплата ЄСВ' }), '65');
+  // обраний вручну рахунок сильніший за автоматичний
+  const E = buildLedgerEntries([
+    { id: 'X1', date: '2026-10-19', type: 'expense', amount: 500, counterparty: 'Невідомий отримувач', ledgerAccount: '64' },
+    { id: 'X2', date: '2026-10-20', type: 'income', amount: 300, counterparty: 'Новий покупець', ledgerAccount: '36' },
+    { id: 'X3', date: '2026-10-21', type: 'income', amount: 100, counterparty: 'Банк', ledgerAccount: '74' },
+  ]);
+  const dc = (id) => { const e = E.find(x => x.id === id); return `${e.debit.code}-${e.credit.code}`; };
+  assert.equal(dc('X1'), '64-31'); assert.equal(dc('X2'), '31-36'); assert.equal(dc('X3'), '31-74');
+  assert.equal(isOwnTaxPayment({ counterparty: 'Невідомий', ledgerAccount: '64' }), true);
+  assert.equal(isOwnTaxPayment({ counterparty: 'ГУ ДПС', ledgerAccount: '84' }), false);
 }
 console.log('ALL OK');

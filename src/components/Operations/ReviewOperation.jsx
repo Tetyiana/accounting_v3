@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 
 /**
  * Перевірка та редагування рядків, розпізнаних з файлу, перед збереженням у журнал.
- * props: rows, onSave(rows), onCancel(), isBankImport
+ * props: rows, onSave(rows), onCancel(), isBankImport,
+ *        accounts {код: назва} і suggestAccount(row) → код — для вибору кореспондуючого рахунку
  */
-const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false }) => {
+const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false, accounts = null, suggestAccount = null }) => {
   const [editable, setEditable] = useState(rows);
   const [selected, setSelected] = useState(() => new Set(rows.map((_, i) => i)));
 
@@ -51,6 +52,7 @@ const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false }) => {
               <th>Контрагент</th>
               <th style={{textAlign:'right'}}>Сума, грн</th>
               <th>Примітка</th>
+              {accounts && <th title="Кореспондуючий рахунок">Рахунок</th>}
               <th></th>
             </tr>
           </thead>
@@ -74,6 +76,16 @@ const ReviewOperation = ({ rows, onSave, onCancel, isBankImport = false }) => {
                 <td><input className="table-input" value={row.counterparty || ''} onChange={e => handleChange(idx, 'counterparty', e.target.value)} placeholder="Контрагент" /></td>
                 <td><input type="number" className="table-input table-input--right" value={row.amount || ''} onChange={e => handleChange(idx, 'amount', e.target.value)} /></td>
                 <td><input className="table-input" value={row.description || ''} onChange={e => handleChange(idx, 'description', e.target.value)} placeholder="Опис" /></td>
+                {accounts && (
+                  <td>
+                    <select className="table-input" value={row.ledgerAccount || ''} style={{ minWidth: 150 }}
+                      onChange={e => handleChange(idx, 'ledgerAccount', e.target.value)}>
+                      <option value="">авто{suggestAccount ? `: ${suggestAccount(row)}` : ''}</option>
+                      {Object.entries(accounts).map(([code, label]) =>
+                        <option key={code} value={code}>{code} — {label}</option>)}
+                    </select>
+                  </td>
+                )}
                 <td><button className="btn-icon btn-icon--del" onClick={() => removeRow(idx)}>✕</button></td>
               </tr>
             ))}

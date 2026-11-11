@@ -4,14 +4,18 @@ import { useFop } from '../context/FopContext';
 import { useSettings } from '../context/SettingsContext';
 import AttachmentsList from '../components/common/AttachmentsList';
 import Autocomplete from '../components/common/Autocomplete';
-import { calculateRunningBalance } from '../utils/accountingLogic';
+import { calculateRunningBalance, LEDGER_ACCOUNTS, CORR_ACCOUNTS, corrAccountOf, suggestCorrAccount } from '../utils/accountingLogic';
+import { buildPartyIndex } from '../utils/settlements';
+
+const CORR_OPTIONS = Object.fromEntries(CORR_ACCOUNTS.map(c => [c, LEDGER_ACCOUNTS[c]]));
+const normType = (t) => (t === 'incoming' ? 'income' : t === 'outgoing' ? 'expense' : t);
 import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
 import { parseFile } from '../utils/parser';
 import { parseBankFile } from '../utils/fileHandlers';
 import { openPrintWindow } from '../utils/printWindow';
 
-const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank', vatAmount: '' };
+const EMPTY = { date: new Date().toISOString().slice(0,10), counterparty: '', amount: '', description: '', paymentMethod: 'bank', vatAmount: '', ledgerAccount: '' };
 const fmt = n => (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2 });
 const METHOD_LABEL = { bank: 'Банк', cash: 'Каса', acquiring: 'Еквайринг' };
 
@@ -66,7 +70,10 @@ ${section('Банк / еквайринг', bankRows)}
 };
 
 const JournalView = () => {
-  const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment, contracts } = useData();
+  const { transactions, addTransaction, updateTransaction, deleteTransaction, clients, addClient, invoices, payments, addPayment, contracts, acts } = useData();
+  // Покупці й постачальники з документів — для автовизначення кореспондуючого рахунку
+  const docs = useMemo(() => ({ acts, invoices, payments }), [acts, invoices, payments]);
+  const partyIdx = useMemo(() => buildPartyIndex(docs), [docs]);
   const { activeFop } = useFop();
   const { settings } = useSettings();
   // Для ФОП 3 групи — платника ПДВ сума ПДВ не входить до доходу (пп. 1 п. 292.11 ПКУ),
@@ -126,8 +133,13 @@ const JournalView = () => {
     if (+form.vatAmount < 0 || +form.vatAmount > +form.amount) {
       setErr('ПДВ не може бути від\'ємним або більшим за суму операції'); return;
     }
+    // Рахунок передаємо в базу лише коли він обраний або змінений
+    const { ledgerAccount, ...formRest } = form;
+    const accPatch = ledgerAccount ? { ledgerAccount } : {};
     if (editId) {
-      updateTransaction(editId, { ...form, type: opType });
+      const before = transactions.find(t => t.id === editId);
+      const accEdit = (before?.ledgerAccount || '') !== (ledgerAccount || '') ? { ledgerAccount: ledgerAccount || '' } : {};
+      updateTransaction(editId, { ...formRest, ...accEdit, type: opType });
       setEditId(null);
     } else {
       const inv = unpaidInvoices.find(i => i.id === linkInvoiceId);
@@ -142,7 +154,7 @@ const JournalView = () => {
         }, { invoice: inv });
       } else {
         addTransaction({
-          ...form, type: opType,
+          ...formRest, ...accPatch, type: opType,
           contractId: linkContractId || null,
         });
       }
@@ -162,7 +174,7 @@ const JournalView = () => {
   const startEdit = (row) => {
     setEditId(row.id);
     setOpType(row.type);
-    setForm({ date: row.date, counterparty: row.counterparty || '', amount: row.amount, description: row.description || '' });
+    setForm({ date: row.date, counterparty: row.counterparty || '', amount: row.amount, description: row.description || '', ledgerAccount: row.ledgerAccount || '' });
     setErr('');
     setShowForm(true);
     setUploadMode(false);
@@ -192,6 +204,7 @@ const JournalView = () => {
       description: r.description || '',
       type:        (r.type === 'incoming' ? 'income' : r.type === 'outgoing' ? 'expense' : r.type) || opType,
       paymentMethod: r.paymentMethod || (isBankImport ? 'bank' : 'cash'),
+      ...(r.ledgerAccount ? { ledgerAccount: r.ledgerAccount } : {}),
     }));
     setShowForm(false);
     setReviewRows(null);
@@ -346,7 +359,9 @@ const JournalView = () => {
           {importInfo && (
             <div className="settings-msg" style={{marginBottom:10}}>ℹ {importInfo}</div>
           )}
-          <ReviewOperation rows={reviewRows} onSave={handleReviewSave} onCancel={() => setReviewRows(null)} isBankImport={isBankImport} />
+          <ReviewOperation rows={reviewRows} onSave={handleReviewSave} onCancel={() => setReviewRows(null)} isBankImport={isBankImport}
+            accounts={CORR_OPTIONS}
+            suggestAccount={(r) => suggestCorrAccount({ ...r, type: normType(r.type) || opType }, docs)} />
         </div>
       )}
 
@@ -393,6 +408,14 @@ const JournalView = () => {
             <div className="field">
               <label>Примітка</label>
               <input name="description" value={form.description} onChange={set} placeholder="Опис операції" />
+            </div>
+            <div className="field">
+              <label>Кореспондуючий рахунок</label>
+              <select name="ledgerAccount" value={form.ledgerAccount || ''} onChange={set}>
+                <option value="">авто: {suggestCorrAccount({ ...form, type: opType }, docs)}</option>
+                {Object.entries(CORR_OPTIONS).map(([code, label]) =>
+                  <option key={code} value={code}>{code} — {label}</option>)}
+              </select>
             </div>
             <div className="field">
               <label>Спосіб оплати</label>
@@ -483,13 +506,14 @@ const JournalView = () => {
               <th>Контрагент</th>
               <th style={{textAlign:'right'}}>Сума, грн</th>
               <th>Примітка</th>
+              <th title="Кореспондуючий рахунок: обраний вручну або визначений автоматично">Рах.</th>
               <th style={{textAlign:'right'}}>Баланс, грн</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <tr><td colSpan={9} className="table-empty">Операцій немає</td></tr>
+              <tr><td colSpan={10} className="table-empty">Операцій немає</td></tr>
             ) : rows.map(row => (
               <tr key={row.id} className={row.type==='income'?'row-income':'row-expense'}>
                 <td>
@@ -506,6 +530,10 @@ const JournalView = () => {
                 <td>{row.counterparty||'—'}</td>
                 <td style={{textAlign:'right',fontWeight:600}}>{fmt(row.amount)}</td>
                 <td className="cell-muted">{row.description||'—'}</td>
+                <td title={LEDGER_ACCOUNTS[corrAccountOf(row, partyIdx)] + (row.ledgerAccount ? ' (обрано вручну)' : ' (авто)')}
+                    style={row.ledgerAccount ? { fontWeight: 600 } : { color: 'var(--text-muted)' }}>
+                  {corrAccountOf(row, partyIdx)}
+                </td>
                 <td style={{textAlign:'right'}}>{fmt(row.balance)}</td>
                 <td>
                   <div style={{display:'flex', gap:4}}>

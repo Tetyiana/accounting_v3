@@ -23,6 +23,8 @@ const round2 = (n) => Math.round((+n || 0) * 100) / 100;
 const BUDGET_RE = /дпс|казначей|податков/i;
 const ESV_RE    = /єсв|єдин\S* внес|пфу|пенсійн/i;
 export const isOwnTaxPayment = (t) => {
+  // Рахунок обрано вручну: 64 — податки, решта — ні
+  if (t.ledgerAccount) return t.ledgerAccount === '64';
   const text = `${t.counterparty || ''} ${t.description || ''}`;
   return BUDGET_RE.test(text) && !ESV_RE.test(text);
 };

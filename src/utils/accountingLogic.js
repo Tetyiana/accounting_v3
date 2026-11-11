@@ -28,8 +28,47 @@ export const LEDGER_ACCOUNTS = {
 };
 
 const acc = (code) => ({ code, label: LEDGER_ACCOUNTS[code] || code });
-const BUDGET_TAX_RE  = /дпс|казначей/i;
-const BUDGET_ESV_RE  = /пфу|пенсійн/i;
+// Автовизначення платежів до бюджету — за контрагентом і призначенням платежу.
+const PFU_RE       = /пфу|пенсійн/i;
+const TREASURY_RE  = /дпс|казначей|(^|[^а-яіїєґ])г?ук у |дксу/i;
+const ESV_WORDS_RE = /(^|[^а-яіїєґ])єсв([^а-яіїєґ]|$)|єдин\S* (соц\S* )?внес/i;
+const TAX_WORDS_RE = /єдин\S* подат|військов\S* зб|(^|[^а-яіїєґ])пдфо([^а-яіїєґ]|$)/i;
+const PAYROLL_RE   = /зарплат|заробітн\S* плат|аванс з\/п|відпускн|лікарнян/i;
+
+// Рахунки, які можна обрати кореспондуючими для операції банку/каси
+export const CORR_ACCOUNTS = ['36', '37', '63', '64', '65', '66', '68', '70', '74', '84'];
+
+const txText = (t) => `${t.counterparty || ''} ${t.description || ''}`;
+
+// Автоматичний кореспондуючий рахунок операції (без урахування явно обраного).
+// who — результат partyOfTx: чи це покупець / постачальник з документами.
+const autoCorrAccount = (t, who) => {
+  if (t.type === 'refund_out') return who?.side === 'customer' ? '36' : '70';
+  if (t.type === 'refund_in')  return who?.side === 'supplier' ? '63' : '68';
+  if (t.type === 'non_income') return '68';
+  if (t.type === 'income')     return who?.side === 'customer' ? '36' : '70';
+  // Витрата
+  const text = txText(t);
+  if (PFU_RE.test(text)) return '65';
+  // ЄСВ теж сплачують на рахунки Казначейства — розрізняємо за призначенням платежу
+  if (TREASURY_RE.test(text)) return ESV_WORDS_RE.test(text) ? '65' : '64';
+  if (t.payrollRecordId || PAYROLL_RE.test(text)) return '66';
+  if (ESV_WORDS_RE.test(text)) return '65';
+  if (TAX_WORDS_RE.test(text)) return '64';
+  if (who?.side === 'supplier') return '63';
+  return '84';
+};
+
+// Кореспондуючий рахунок операції: явно обраний користувачем або автоматичний.
+// docs = { acts, invoices, payments } — потрібні, щоб розпізнати покупців і постачальників.
+export const corrAccountOf = (t, idx) => {
+  if (t.ledgerAccount && LEDGER_ACCOUNTS[t.ledgerAccount]) return t.ledgerAccount;
+  return autoCorrAccount(t, idx ? idx.partyOfTx(t) : null);
+};
+
+// Підказка для форми і перевірки виписки (до збереження операції)
+export const suggestCorrAccount = (t, docs = {}) =>
+  autoCorrAccount({ ...t, ledgerAccount: '' }, buildPartyIndex(docs).partyOfTx({ ...t, ledgerAccount: '' }));
 const round2 = (n) => Math.round((+n || 0) * 100) / 100;
 
 const ACT_LABEL = { act: 'Акт', delivery_note: 'Накладна', return_act: 'Акт повернення' };
@@ -86,37 +125,11 @@ export const buildLedgerEntries = (transactions = [], docs = {}) => {
     const amount   = +t.amount || 0;
     const cashAcc  = t.paymentMethod === 'cash' ? acc('30') : acc('31');
     const who      = idx.partyOfTx(t);
-    let debit, credit;
-
-    if (t.type === 'refund_out') {
-      debit  = who?.side === 'customer' ? acc('36') : acc('70');
-      credit = cashAcc;
-    } else if (t.type === 'refund_in') {
-      debit  = cashAcc;
-      credit = who?.side === 'supplier' ? acc('63') : acc('68');
-    } else if (t.type === 'non_income') {
-      debit  = cashAcc;
-      credit = acc('68');
-    } else if (t.type === 'income') {
-      debit  = cashAcc;
-      credit = who?.side === 'customer' ? acc('36') : acc('70');
-    } else {
-      // Витрата
-      if (t.payrollRecordId) {
-        if (BUDGET_TAX_RE.test(t.counterparty||'')) debit = acc('64');
-        else if (BUDGET_ESV_RE.test(t.counterparty||'')) debit = acc('65');
-        else debit = acc('66');
-      } else if (BUDGET_TAX_RE.test(t.counterparty||'')) {
-        debit = acc('64');
-      } else if (BUDGET_ESV_RE.test(t.counterparty||'')) {
-        debit = acc('65');
-      } else if (who?.side === 'supplier') {
-        debit = acc('63');
-      } else {
-        debit = acc('84');
-      }
-      credit = cashAcc;
-    }
+    const corr     = acc(corrAccountOf(t, idx));
+    // Гроші прийшли — Дт каса/банк; пішли — Кт каса/банк
+    const moneyIn  = t.type === 'income' || t.type === 'refund_in' || t.type === 'non_income';
+    const debit    = moneyIn ? cashAcc : corr;
+    const credit   = moneyIn ? corr : cashAcc;
 
     entries.push({
       id: t.id,
