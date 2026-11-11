@@ -4,10 +4,11 @@ import { useSettings } from '../context/SettingsContext';
 import { useAuth } from '../context/AuthContext';
 import { useFop } from '../context/FopContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
-import { calculateWarehouseStock } from '../utils/warehouseLogic';
+import { buildWarehouseMovements, calcWarehouse } from '../utils/warehouseLogic';
 import { calcInvoiceStatus, calcInvoicePaid, fmtMoney } from '../utils/documentLogic';
 import { toVocative } from '../utils/vocativeUtils';
 import { buildDeadlines } from '../utils/deadlines';
+import { effectivePayments } from '../utils/settlements';
 
 const Stat = ({ label, value, accent, color, onClick }) => (
   <div className={`stat-card${accent?' stat-card--accent':''}`}
@@ -19,7 +20,7 @@ const Stat = ({ label, value, accent, color, onClick }) => (
 
 const HomeView = ({ setActiveTab }) => {
   const { user }                                                        = useAuth();
-  const { transactions, movements, vatInvoices, invoices, payments, payrollRecords, employees } = useData();
+  const { transactions, movements, vatInvoices, invoices, payments, payrollRecords, employees, acts } = useData();
   const { settings }                                                    = useSettings();
   const { activeFop }                                                   = useFop();
 
@@ -29,27 +30,29 @@ const HomeView = ({ setActiveTab }) => {
     return { income, expense, net: income-expense, count: transactions.length };
   }, [transactions]);
 
+  // Оплати з урахуванням надходжень із Банк/Каса, не прив'язаних до рахунку
+  const payEff = useMemo(
+    () => effectivePayments({ invoices, payments, transactions, acts }),
+    [invoices, payments, transactions, acts]);
+
   const unpaid = useMemo(() =>
     invoices.filter(i=>i.direction==='outgoing'&&i.status!=='cancelled')
-      .filter(i=>{ const s=calcInvoiceStatus(i,payments); return s!=='paid'&&s!=='cancelled'; })
-      .reduce((s,i)=>s+Math.max(0,(+i.total||0)-calcInvoicePaid(i.id,payments)),0),
-    [invoices, payments]
+      .filter(i=>{ const s=calcInvoiceStatus(i,payEff); return s!=='paid'&&s!=='cancelled'; })
+      .reduce((s,i)=>s+Math.max(0,(+i.total||0)-calcInvoicePaid(i.id,payEff)),0),
+    [invoices, payEff]
   );
 
   const unpaidCreditor = useMemo(() =>
     invoices.filter(i=>i.direction==='incoming'&&i.status!=='cancelled')
-      .reduce((s,i)=>s+Math.max(0,(+i.total||0)-calcInvoicePaid(i.id,payments)),0),
-    [invoices, payments]
+      .reduce((s,i)=>s+Math.max(0,(+i.total||0)-calcInvoicePaid(i.id,payEff)),0),
+    [invoices, payEff]
   );
 
   const warehouseStats = useMemo(() => {
     if (!settings.useWarehouse) return null;
-    const sorted = [...movements].sort((a,b)=>a.date.localeCompare(b.date));
-    const withBalance = calculateWarehouseStock(sorted);
-    const lastByItem = {};
-    withBalance.forEach(m => { lastByItem[m.itemName] = m.balance; });
-    return { positions: Object.keys(lastByItem).length };
-  }, [movements, settings.useWarehouse]);
+    const { items } = calcWarehouse(buildWarehouseMovements({ movements, acts, invoices }));
+    return { positions: items.filter(i => i.qty !== 0).length };
+  }, [movements, acts, invoices, settings.useWarehouse]);
 
   const vatStats = useMemo(() => {
     if (!settings.isVatPayer) return null;

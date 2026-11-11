@@ -1,10 +1,24 @@
 import { buildPartyIndex } from './settlements';
 
+export const MONEY_IN_TYPES = ['income', 'refund_in', 'non_income'];
+
+// Залишки коштів окремо: банк (разом з еквайрингом) і каса
+export const cashBalances = (transactions = []) => {
+  const r = { bank: 0, cash: 0 };
+  transactions.forEach(t => {
+    const amount = parseFloat(t.amount) || 0;
+    const key = t.paymentMethod === 'cash' ? 'cash' : 'bank';
+    r[key] += MONEY_IN_TYPES.includes(t.type) ? amount : -amount;
+  });
+  return { bank: Math.round(r.bank * 100) / 100, cash: Math.round(r.cash * 100) / 100 };
+};
+
 export const calculateRunningBalance = (transactions) => {
   let balance = 0;
   return transactions.map(t => {
     const amount = parseFloat(t.amount) || 0;
-    balance += t.type === 'income' ? amount : -amount;
+    // Надходження: дохід, повернення від постачальника, кошти, що не є доходом
+    balance += MONEY_IN_TYPES.includes(t.type) ? amount : -amount;
     return { ...t, balance: parseFloat(balance.toFixed(2)) };
   });
 };

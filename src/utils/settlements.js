@@ -139,3 +139,60 @@ export const buildSettlements = ({ acts = [], invoices = [], payments = [], tran
     };
   });
 };
+
+/**
+ * Оплати рахунків з урахуванням надходжень, НЕ прив'язаних до рахунку.
+ * Повертає payments + «віртуальні» оплати: кожна неприв'язана операція банку/каси
+ * від контрагента розподіляється на його неоплачені рахунки від найдавнішого.
+ * Віртуальні оплати мають auto: true і txId; у базу не записуються — це лише
+ * для показу «Оплачено / Залишок / Статус». Для податкового обліку (Книга доходів)
+ * їх НЕ використовувати: ті надходження вже враховані як операції журналу.
+ */
+export const effectivePayments = ({ invoices = [], payments = [], transactions = [], acts = [] }) => {
+  const idx = buildPartyIndex({ acts, invoices, payments });
+  const remaining = new Map();   // invoiceId → скільки ще не оплачено
+  invoices.forEach(i => { if (i.status !== 'cancelled') remaining.set(i.id, round2(i.total)); });
+  payments.forEach(p => {
+    if (remaining.has(p.invoiceId)) remaining.set(p.invoiceId, round2(remaining.get(p.invoiceId) - (+p.amount || 0)));
+  });
+
+  // Рахунки контрагента за датою
+  const byParty = new Map();
+  invoices.forEach(i => {
+    if (i.status === 'cancelled') return;
+    const id = `${i.direction === 'incoming' ? 'supplier' : 'customer'}:${partyKey(i.clientName)}`;
+    if (!byParty.has(id)) byParty.set(id, []);
+    byParty.get(id).push(i);
+  });
+  byParty.forEach(list => list.sort((a, b) => (a.date || '').localeCompare(b.date || '')
+    || String(a.number).localeCompare(String(b.number), 'uk', { numeric: true })));
+
+  const virtual = [];
+  [...transactions]
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .forEach(t => {
+      if (idx.invoiceOfTx(t)) return;                       // уже прив'язана до рахунку
+      const who = idx.partyOfTx(t);
+      if (!who || !who.key) return;
+      const isPay = who.side === 'customer' ? t.type === 'income' : t.type === 'expense';
+      if (!isPay) return;
+      let left = round2(t.amount);
+      for (const inv of byParty.get(`${who.side}:${who.key}`) || []) {
+        if (left <= 0) break;
+        const rem = remaining.get(inv.id) || 0;
+        if (rem <= 0) continue;
+        const part = Math.min(rem, left);
+        remaining.set(inv.id, round2(rem - part));
+        left = round2(left - part);
+        virtual.push({
+          id: `auto_${t.id}_${inv.id}`, auto: true, txId: t.id,
+          invoiceId: inv.id, direction: inv.direction,
+          date: t.date, amount: part,
+          paymentMethod: t.paymentMethod || 'bank',
+          notes: 'з Банк/Каса, без прив\'язки до рахунку',
+        });
+      }
+    });
+
+  return [...payments, ...virtual];
+};

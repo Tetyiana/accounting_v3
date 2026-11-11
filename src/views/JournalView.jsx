@@ -4,10 +4,11 @@ import { useFop } from '../context/FopContext';
 import { useSettings } from '../context/SettingsContext';
 import AttachmentsList from '../components/common/AttachmentsList';
 import Autocomplete from '../components/common/Autocomplete';
-import { calculateRunningBalance, LEDGER_ACCOUNTS, CORR_ACCOUNTS, corrAccountOf, suggestCorrAccount } from '../utils/accountingLogic';
+import { calculateRunningBalance, cashBalances, MONEY_IN_TYPES, LEDGER_ACCOUNTS, CORR_ACCOUNTS, corrAccountOf, suggestCorrAccount } from '../utils/accountingLogic';
 import { buildPartyIndex } from '../utils/settlements';
 
 const CORR_OPTIONS = Object.fromEntries(CORR_ACCOUNTS.map(c => [c, LEDGER_ACCOUNTS[c]]));
+const TYPE_LABEL = { income: 'Надходження', expense: 'Списання', refund_out: 'Повернення покупцю', refund_in: 'Повернення від постач.', non_income: 'Надходження (не дохід)' };
 const normType = (t) => (t === 'incoming' ? 'income' : t === 'outgoing' ? 'expense' : t);
 import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
@@ -282,6 +283,8 @@ const JournalView = () => {
     });
   }, [transactions, filter]);
 
+  const balances = useMemo(() => cashBalances(transactions), [transactions]);
+
   const rows = useMemo(() => {
     const sorted = [...filtered].sort((a, b) => (a.date||'').localeCompare(b.date||''));
     return calculateRunningBalance(sorted);
@@ -492,6 +495,11 @@ const JournalView = () => {
         )}
       </div>
 
+      <p className="cell-muted" style={{ margin: '0 0 10px', fontSize: '.86rem' }}>
+        Залишок на сьогодні: банк — <b>{fmt(balances.bank)}</b> грн, каса — <b>{fmt(balances.cash)}</b> грн.
+        {balances.cash < 0 && <span style={{ color: 'var(--error)' }}> Каса від&apos;ємна — перевірте, чи внесено всі готівкові надходження.</span>}
+      </p>
+
       <div className="table-wrap">
         <table className="data-table">
           <thead>
@@ -515,15 +523,15 @@ const JournalView = () => {
             {rows.length === 0 ? (
               <tr><td colSpan={10} className="table-empty">Операцій немає</td></tr>
             ) : rows.map(row => (
-              <tr key={row.id} className={row.type==='income'?'row-income':'row-expense'}>
+              <tr key={row.id} className={MONEY_IN_TYPES.includes(row.type)?'row-income':'row-expense'}>
                 <td>
                   <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggleOne(row.id)}
                     style={{cursor:'pointer'}} />
                 </td>
                 <td>{row.date}</td>
                 <td>
-                  <span className={`badge badge--${row.type==='income'?'success':'danger'}`}>
-                    {row.type==='income'?'Надходження':'Списання'}
+                  <span className={`badge badge--${MONEY_IN_TYPES.includes(row.type)?'success':'danger'}`}>
+                    {TYPE_LABEL[row.type] || 'Списання'}
                   </span>
                 </td>
                 <td className="cell-muted">{METHOD_LABEL[row.paymentMethod] || 'Банк'}</td>

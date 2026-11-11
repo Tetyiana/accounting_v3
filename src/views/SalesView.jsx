@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
+import { effectivePayments } from '../utils/settlements';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
 import AttachmentsList from '../components/common/AttachmentsList';
@@ -958,8 +959,13 @@ const InvoiceRow = ({ inv, allActs, invActs, invPayments, onAddAct, onUpdateAct,
 // ─── Головний компонент ─────────────────────────────────────────────
 const SalesView = () => {
   const { invoices, acts, payments, addInvoice, updateInvoice, addAct, updateAct, deleteAct, addPayment, deleteInvoice,
-          clients, products, vatInvoices, addVatInvoice, addTransaction } = useData();
+          clients, products, vatInvoices, addVatInvoice, addTransaction, transactions } = useData();
   const { settings } = useSettings();
+  // Оплати для показу: записані оплати + надходження з Банк/Каса без прив'язки до рахунку,
+  // розподілені на рахунки контрагента від найдавнішого
+  const payEff = useMemo(
+    () => effectivePayments({ invoices, payments, transactions, acts }),
+    [invoices, payments, transactions, acts]);
   const [direction, setDirection]   = useState('outgoing');
   const [addInv, setAddInv]         = useState(false);
   const [editInv, setEditInv]       = useState(null); // invoice obj for editing
@@ -979,18 +985,18 @@ const SalesView = () => {
   const dirInvoices = useMemo(() =>
     [...invoices]
       .filter(i => i.direction === direction)
-      .filter(i => !filter.status || calcInvoiceStatus(i, payments) === filter.status)
+      .filter(i => !filter.status || calcInvoiceStatus(i, payEff) === filter.status)
       .filter(i => !filter.search || i.clientName?.toLowerCase().includes(filter.search.toLowerCase()) || i.number?.includes(filter.search))
       .sort((a, b) => b.date.localeCompare(a.date)),
-    [invoices, payments, direction, filter]
+    [invoices, payEff, direction, filter]
   );
 
   const totals = useMemo(() => {
     const all = invoices.filter(i => i.direction === direction);
     const totalSum  = all.reduce((s, i) => s + (+i.total||0), 0);
-    const totalPaid = payments.filter(p => p.direction === direction).reduce((s, p) => s + (+p.amount||0), 0);
+    const totalPaid = payEff.filter(p => p.direction === direction).reduce((s, p) => s + (+p.amount||0), 0);
     return { totalSum, totalPaid, totalUnpaid: totalSum - totalPaid };
-  }, [invoices, payments, direction]);
+  }, [invoices, payEff, direction]);
 
   return (
     <div className="view-sales">
@@ -1079,7 +1085,7 @@ const SalesView = () => {
                 inv={inv}
                 allActs={acts}
                 invActs={acts.filter(a => a.invoiceId === inv.id)}
-                invPayments={payments.filter(p => p.invoiceId === inv.id)}
+                invPayments={payEff.filter(p => p.invoiceId === inv.id)}
                 onAddAct={(act)     => addAct(act)}
                 onUpdateAct={(id, patch) => updateAct(id, patch)}
                 onDeleteAct={(id) => deleteAct(id)}

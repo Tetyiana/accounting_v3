@@ -1,5 +1,5 @@
 // Конфігурація Книги доходів (і витрат) за групами оподаткування.
-// Наказ МФУ №1637 — гр. 1–3; Наказ МФУ №481 — загальна система.
+// Наказ МФУ №1637 — гр. 1–3; наказ Мінфіну від 13.05.2021 № 261 — загальна система.
 
 const INCOME_COLS = [
   { key: 'cash',     label: 'Готівка, грн',        align: 'right' },
@@ -13,6 +13,20 @@ const BASE_COLS = [
   { key: 'num',    label: '№',       align: 'left' },
   { key: 'date',   label: 'Дата',    align: 'left' },
   { key: 'docRef', label: 'Документ',align: 'left' },
+];
+
+// Загальна система — графи типової форми (наказ Мінфіну від 13.05.2021 № 261).
+// Гр. 5 (реквізити документа про витрати) — у колонці «Документ».
+// Гр. 10 (амортизація) програма не розраховує.
+const GENERAL_COLS = [
+  { key: 'income',     label: 'Гр. 2. Дохід, грн',                      align: 'right', total: true },
+  { key: 'refund',     label: 'Гр. 3. Повернуто, грн',                  align: 'right', total: true },
+  { key: 'incomeAdj',  label: 'Гр. 4. Скоригований дохід, грн',         align: 'right', total: true },
+  { key: 'expGoods',   label: 'Гр. 6. Товари, роботи, послуги, грн',    align: 'right', total: true },
+  { key: 'expPayroll', label: 'Гр. 7. Оплата праці і нарахування, грн', align: 'right', total: true },
+  { key: 'expTaxes',   label: 'Гр. 8. Податки, збори, ЄСВ, грн',        align: 'right', total: true },
+  { key: 'expOther',   label: 'Гр. 9. Інші витрати, грн',               align: 'right', total: true },
+  { key: 'netIncome',  label: 'Гр. 11. Чистий дохід, грн',              align: 'right', total: true },
 ];
 
 export const KDV_CONFIGS = {
@@ -46,31 +60,16 @@ export const KDV_CONFIGS = {
     ],
   },
   'general': {
-    title:    'Книга обліку доходів і витрат',
-    subtitle: 'Наказ МФУ №481 від 13.05.2021',
+    title:    'Облік доходів і витрат (типова форма)',
+    subtitle: 'Наказ Мінфіну від 13.05.2021 № 261',
     incomeOnly: false,
-    columns: [
-      ...BASE_COLS,
-      { key: 'income',       label: 'Дохід, грн',             align: 'right', total: true },
-      { key: 'expenseDoc',   label: 'Витрати з докум., грн',   align: 'right' },
-      { key: 'expenseNoDoc', label: 'Витрати без докум., грн', align: 'right' },
-      { key: 'totalExpense', label: 'Разом витрати, грн',      align: 'right', total: true },
-      { key: 'netIncome',    label: 'Чистий дохід, грн',       align: 'right', total: true },
-    ],
+    columns: [...BASE_COLS, ...GENERAL_COLS],
   },
   'general_vat': {
-    title:    'Книга обліку доходів і витрат',
-    subtitle: 'Наказ МФУ №481 від 13.05.2021',
+    title:    'Облік доходів і витрат (типова форма)',
+    subtitle: 'Наказ Мінфіну від 13.05.2021 № 261 · суми без ПДВ',
     incomeOnly: false,
-    columns: [
-      ...BASE_COLS,
-      { key: 'income',       label: 'Дохід, грн',             align: 'right', total: true },
-      { key: 'vatOblig',     label: 'ПДВ зобов., грн',        align: 'right' },
-      { key: 'expenseDoc',   label: 'Витрати з докум., грн',   align: 'right' },
-      { key: 'expenseNoDoc', label: 'Витрати без докум., грн', align: 'right' },
-      { key: 'totalExpense', label: 'Разом витрати, грн',      align: 'right', total: true },
-      { key: 'netIncome',    label: 'Чистий дохід, грн',       align: 'right', total: true },
-    ],
+    columns: [...BASE_COLS, ...GENERAL_COLS],
   },
 };
 

@@ -6,10 +6,11 @@ import { taxYear, epFixedMonthly, taxYearWarning } from '../src/constants/taxYea
 import { incomeLimitFor, checkIncomeLimit } from '../src/utils/incomeLimits.js';
 import { buildDeadlines } from '../src/utils/deadlines.js';
 import { calcGeneralYear, isOwnTaxPayment } from '../src/utils/generalSystem.js';
-import { calcNetFromGross } from '../src/utils/payrollLogic.js';
-import { buildLedgerEntries, suggestCorrAccount } from '../src/utils/accountingLogic.js';
-import { buildSettlements, partyKey } from '../src/utils/settlements.js';
-import { computeAutoDebts } from '../src/utils/documentLogic.js';
+import { calcNetFromGross, calcLeaveDaily } from '../src/utils/payrollLogic.js';
+import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
+import { buildSettlements, partyKey, effectivePayments } from '../src/utils/settlements.js';
+import { buildWarehouseMovements, calcWarehouse } from '../src/utils/warehouseLogic.js';
+import { computeAutoDebts, buildKdvEntries } from '../src/utils/documentLogic.js';
 
 const y26 = taxYear(2026);
 assert.equal(y26.esvMin, 1902.34); assert.equal(y26.vzFixed, 864.70);
@@ -173,5 +174,71 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(dc('X1'), '64-31'); assert.equal(dc('X2'), '31-36'); assert.equal(dc('X3'), '31-74');
   assert.equal(isOwnTaxPayment({ counterparty: 'Невідомий', ledgerAccount: '64' }), true);
   assert.equal(isOwnTaxPayment({ counterparty: 'ГУ ДПС', ledgerAccount: '84' }), false);
+}
+// ── Оплати рахунків з неприв'язаних надходжень ──
+{
+  const invoices = [
+    { id: 'I1', direction: 'outgoing', number: '1', date: '2026-08-20', clientName: 'ТОВ «ГРІНТЕХ ХАРВЕСТ»', total: 220000, status: 'sent' },
+    { id: 'I2', direction: 'outgoing', number: '2', date: '2026-09-15', clientName: 'ТОВ «ГРІНТЕХ ХАРВЕСТ»', total: 190000, status: 'sent' },
+  ];
+  const transactions = [
+    { id: 'T1', date: '2026-09-01', type: 'income', amount: 220000, counterparty: 'ГРІНТЕХ ХАРВЕСТ ТОВ' },
+    { id: 'T2', date: '2026-10-01', type: 'income', amount: 100000, counterparty: 'ТОВ "Грінтех Харвест"' },
+  ];
+  const eff = effectivePayments({ invoices, payments: [], transactions, acts: [] });
+  const paid = (id) => eff.filter(p => p.invoiceId === id).reduce((s, p) => s + p.amount, 0);
+  assert.equal(paid('I1'), 220000); assert.equal(paid('I2'), 100000);
+}
+// ── Загальна система: типова форма (наказ № 261) ──
+{
+  const tx = [
+    { id: 'a', date: '2026-03-01', type: 'income', amount: 1200, vatAmount: 200, counterparty: 'Покупець' },
+    { id: 'b', date: '2026-03-02', type: 'expense', amount: 300, counterparty: 'Оренда' },
+    { id: 'c', date: '2026-03-03', type: 'expense', amount: 500, counterparty: 'ГУК у Київ.обл', description: 'ПДФО аванс' },
+    { id: 'd', date: '2026-03-04', type: 'expense', amount: 1902.34, counterparty: 'ГУ ДПС', description: 'ЄСВ за себе' },
+    { id: 'e', date: '2026-03-05', type: 'expense', amount: 8647, counterparty: 'Петренко', description: 'Зарплата' },
+    { id: 'f', date: '2026-03-06', type: 'refund_out', amount: 100, counterparty: 'Покупець' },
+    { id: 'g', date: '2026-03-07', type: 'non_income', amount: 999, counterparty: 'Власні кошти' },
+  ];
+  const K = buildKdvEntries({ transactions: tx, taxGroup: 'general_vat' });
+  const sum = (k) => Math.round(K.reduce((s, e) => s + (+e[k] || 0), 0) * 100) / 100;
+  assert.equal(sum('income'), 1000); assert.equal(sum('refund'), 100); assert.equal(sum('incomeAdj'), 900);
+  assert.equal(sum('expOther'), 300); assert.equal(sum('expTaxes'), 1902.34); assert.equal(sum('expPayroll'), 8647);
+  assert.equal(sum('netIncome'), Math.round((900 - 300 - 1902.34 - 8647) * 100) / 100);
+  assert.equal(K.length, 5);
+}
+// ── Склад: середньозважена собівартість ──
+{
+  const list = buildWarehouseMovements({
+    movements: [
+      { id: 'm1', date: '2026-01-05', itemName: 'Крем', sku: 'K1', operation: 'in', kind: 'opening', qty: 10, price: 100 },
+      { id: 'm2', date: '2026-02-01', itemName: 'Крем', sku: 'K1', operation: 'in', kind: 'purchase', qty: 10, price: 200 },
+      { id: 'm3', date: '2026-03-01', itemName: 'крем', sku: 'k1', operation: 'out', kind: 'writeoff', qty: 5 },
+    ],
+    acts: [
+      { id: 'A1', type: 'delivery_note', direction: 'outgoing', date: '2026-03-10', number: '7', clientName: 'Покупець',
+        items: [{ name: 'Тонік', qty: 2, unit: 'шт', price: 500 }, { name: 'Доставка', qty: 1, unit: 'послуга', price: 80 }] },
+      { id: 'A2', type: 'delivery_note', direction: 'incoming', date: '2026-03-05', number: '55', clientName: 'Постач',
+        items: [{ name: 'Тонік', qty: 6, unit: 'шт', price: 250 }] },
+      { id: 'A3', type: 'act', direction: 'outgoing', date: '2026-03-11', items: [{ name: 'Тонік', qty: 1, unit: 'шт', price: 1 }] },
+    ],
+  });
+  const W = calcWarehouse(list, { dateStart: '2026-02-01', dateEnd: '2026-12-31' });
+  const cream = W.items.find(i => i.itemName === 'Крем');
+  assert.equal(cream.openQty, 10); assert.equal(cream.openValue, 1000);
+  assert.equal(cream.qty, 15); assert.equal(cream.avgCost, 150); assert.equal(cream.value, 2250); assert.equal(cream.outValue, 750);
+  const tonic = W.items.find(i => i.itemName === 'Тонік');
+  assert.equal(tonic.qty, 4); assert.equal(tonic.value, 1000); assert.equal(tonic.saleAmount, 1000);
+  assert.equal(W.items.length, 2);                     // послуга і акт на склад не потрапили
+  assert.ok(W.rows.find(r => r.id === 'auto_A1_0').auto);
+}
+// ── Каса і відпускні ──
+{
+  const b = cashBalances([
+    { type: 'income', amount: 100, paymentMethod: 'cash' }, { type: 'non_income', amount: 50, paymentMethod: 'cash' },
+    { type: 'expense', amount: 30, paymentMethod: 'cash' }, { type: 'refund_in', amount: 10, paymentMethod: 'bank' },
+  ]);
+  assert.deepEqual(b, { bank: 10, cash: 120 });
+  assert.equal(calcLeaveDaily([31000, 28000], ['2026-01', '2026-02']), 1000);   // 59000 / (31 + 28)
 }
 console.log('ALL OK');

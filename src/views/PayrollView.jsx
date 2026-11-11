@@ -122,10 +122,16 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
 
 // ─── Калькулятор нарахування ─────────────────────────────────────────
 const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => {
-  const monthlyPayments = [];
-  const dailyRate = calcLeaveDaily(
-    monthlyPayments.length ? monthlyPayments : [+employee.salary || 0]
-  );
+  // Середньоденна зарплата: фактичні нарахування за 12 місяців перед періодом
+  // (Порядок № 100). Якщо історії нарахувань ще немає — від окладу.
+  const { payrollRecords: allPayroll } = useData();
+  const history = (allPayroll || [])
+    .filter(r => r.employeeId === employee.id && r.status !== 'draft' && r.period < period)
+    .sort((a, b) => b.period.localeCompare(a.period))
+    .slice(0, 12);
+  const dailyRate = history.length
+    ? calcLeaveDaily(history.map(r => +r.totalGross || 0), history.map(r => r.period))
+    : calcLeaveDaily([+employee.salary || 0], [period]);
 
   const [mode, setMode] = useState('gross');
   // Баг 6: якщо salary збережено як рядок або число — нормалізуємо

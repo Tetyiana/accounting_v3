@@ -3,7 +3,10 @@
 
 import { VAT_RATES } from '../constants/documentTypes';
 import { isOwnTaxPayment } from './generalSystem';
-import { buildSettlements } from './settlements';
+import { buildSettlements, effectivePayments, buildPartyIndex } from './settlements';
+import { corrAccountOf } from './accountingLogic';
+
+const round2 = (n) => Math.round((+n || 0) * 100) / 100;
 
 // ─── Розрахунок рядка документа ─────────────────────────────────────
 export const calcItemAmounts = (item) => {
@@ -209,83 +212,47 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
       });
 
   } else {
-    // Загальна система: перша подія
-    const processed = new Set();
-    [...invoices]
-      .filter(inv => inv.direction === 'outgoing' && inv.status !== 'cancelled')
-      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
-      .forEach(inv => {
-        const fe = getFirstEvent({ invoice: inv, acts, payments, taxGroup });
-        if (!fe || processed.has(inv.id)) return;
-        processed.add(inv.id);
-        const amt = fe.amount;
-        entries.push({
-          id:     `fe_${inv.id}`,
-          num:    num++,
-          date:   fe.date,
-          docRef: `Рах. №${inv.number} (${fe.type === 'payment' ? 'оплата' : 'акт'})`,
-          sourceId: inv.id,
-          sourceType: 'invoice',
-          cash:   0, bank: amt, acquiring: 0, other: 0,
-          income: amt,
-          expense: 0,
-          vatOblig: +inv.vatAmount || 0,
-          expenseDoc: 0, expenseNoDoc: 0, totalExpense: 0, netIncome: amt,
-          note: '',
-          isReturn: false,
-        });
-      });
+    // ── Загальна система: Типова форма обліку доходів і витрат
+    //    (наказ Мінфіну від 13.05.2021 № 261). Касовий метод: дохід — отримані кошти,
+    //    витрати — оплачені й документально підтверджені (п. 177.2, 177.4 ПКУ).
+    //    Платник ПДВ суми ПДВ ні до доходу, ні до витрат не включає.
+    const isVat = taxGroup === 'general_vat';
+    const partyIdx = buildPartyIndex({ acts, invoices, payments });
+    const blank = {
+      income: 0, refund: 0, incomeAdj: 0, vatOblig: 0,
+      expGoods: 0, expPayroll: 0, expTaxes: 0, expOther: 0, amort: 0,
+      totalExpense: 0, netIncome: 0, expDoc: '',
+    };
+    const ref = (t, fallback) => [t.counterparty, t.description].filter(Boolean).join(' — ') || fallback;
 
-    // Прямі доходи з журналу — операції, не пов'язані з оплатою виставлених рахунків
-    // (якщо дохід заноситься напряму з банку, без формального рахунку/акту)
-    transactions
-      .filter(t => t.type === 'income')
-      .filter(t => !t.invoicePaymentId)
-      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
-      .forEach(t => {
-        const amt = +t.amount || 0;
-        if (amt <= 0) return;
-        entries.push({
-          id:     `tx_${t.id}`,
-          num:    num++,
-          date:   t.date,
-          docRef: t.counterparty || 'Надходження',
-          sourceId: t.id,
-          sourceType: 'transaction',
-          cash: 0, bank: amt, acquiring: 0, other: 0,
-          income: amt,
-          expense: 0, vatOblig: 0,
-          expenseDoc: 0, expenseNoDoc: 0, totalExpense: 0, netIncome: amt,
-          note: t.description || '',
-          isReturn: false,
-        });
-      });
+    transactions.forEach(t => {
+      const amt = +t.amount || 0;
+      if (amt <= 0 || !t.date) return;
+      const vat = isVat ? Math.min(+t.vatAmount || 0, amt) : 0;
+      const net = round2(amt - vat);
+      const base = { ...blank, id: `g_${t.id}`, num: num++, date: t.date, sourceId: t.id, sourceType: 'transaction', note: t.description || '', isReturn: false };
 
-    // Прямі витрати з журналу
-    // Сплата власних ПДФО/ВЗ/ПДВ до бюджету — не витрати діяльності (ст. 177 ПКУ)
-    transactions
-      .filter(t => t.type === 'expense' && !isOwnTaxPayment(t))
-      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
-      .forEach(t => {
-        const amt = +t.amount || 0;
-        // Знаходимо відповідний запис доходу того ж дня або додаємо окремо
-        entries.push({
-          id:     `exp_${t.id}`,
-          num:    num++,
-          date:   t.date,
-          docRef: t.counterparty || 'Витрата',
-          sourceId: t.id,
-          sourceType: 'transaction',
-          cash: 0, bank: 0, acquiring: 0, other: 0,
-          income: 0, vatOblig: 0,
-          expenseDoc: t.hasDocument ? amt : 0,
-          expenseNoDoc: t.hasDocument ? 0 : amt,
-          totalExpense: amt,
-          netIncome: -amt,
-          note: t.description || '',
-          isReturn: false,
-        });
-      });
+      if (t.type === 'income') {
+        // гр. 2 — отриманий дохід; надходження з рахунком «не дохід» (68) сюди не потрапляють
+        if (corrAccountOf(t, partyIdx) === '68') return;
+        entries.push({ ...base, docRef: ref(t, 'Надходження'), income: net, incomeAdj: net, vatOblig: vat, netIncome: net });
+      } else if (t.type === 'refund_out') {
+        // гр. 3 — повернуті покупцю кошти
+        entries.push({ ...base, docRef: ref(t, 'Повернення покупцю'), refund: net, incomeAdj: -net, netIncome: -net, isReturn: true });
+      } else if (t.type === 'expense') {
+        if (isOwnTaxPayment(t)) return;            // власні ПДФО, ВЗ, ПДВ — не витрати
+        const account = corrAccountOf(t, partyIdx);
+        // гр. 6 — товари, роботи, послуги (постачальники); гр. 7 — оплата праці і нарахування;
+        // гр. 8 — податки, збори, ЄСВ, ліцензії; гр. 9 — інші витрати
+        let key;
+        if (account === '66') key = 'expPayroll';
+        else if (account === '65') key = t.payrollRecordId ? 'expPayroll' : 'expTaxes';
+        else if (account === '63') key = 'expGoods';
+        else if (account === '84') key = 'expOther';
+        else return;                               // 36, 37, 68 — не витрати діяльності
+        entries.push({ ...base, docRef: ref(t, 'Витрата'), expDoc: ref(t, ''), [key]: net, totalExpense: net, netIncome: -net });
+      }
+    });
   }
 
   return entries.sort((a, b) => a.date.localeCompare(b.date)).map((e, i) => ({ ...e, num: i+1 }));
@@ -299,6 +266,8 @@ export const computeAutoDebts = ({ invoices = [], acts = [], payments = [], tran
   const today = new Date().toISOString().slice(0, 10);
   const invById = new Map(invoices.map(i => [i.id, i]));
   const invoicesWithActs = new Set(acts.filter(a => a.invoiceId).map(a => a.invoiceId));
+  // Оплати рахунків разом із надходженнями з Банк/Каса без прив'язки до рахунку
+  const payEff = effectivePayments({ invoices, payments, transactions, acts });
 
   // 1. Борги за актами і накладними: оплата контрагента гасить його акти від найдавнішого.
   buildSettlements({ acts, invoices, payments, transactions }).forEach(p => {
@@ -344,7 +313,7 @@ export const computeAutoDebts = ({ invoices = [], acts = [], payments = [], tran
   invoices.forEach(inv => {
     if (inv.status === 'cancelled') return;
     if (invoicesWithActs.has(inv.id)) return;        // борг уже показано за актом
-    const remaining = (+inv.total || 0) - calcInvoicePaid(inv.id, payments);
+    const remaining = (+inv.total || 0) - calcInvoicePaid(inv.id, payEff);
     if (remaining <= 0) return;
     const isOverdue = inv.dueDate && inv.dueDate < today;
     debts.push({

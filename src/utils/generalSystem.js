@@ -47,9 +47,11 @@ export function calcGeneralYear({ transactions = [], year, isVat = false, esvExe
     if (m < 0 || m > 11) return;
     const amt = +t.amount || 0;
     const vat = isVat ? (+t.vatAmount || 0) : 0;
-    if (t.type === 'income') income[m] += Math.max(0, amt - vat);
+    // Рахунок, обраний вручну: 68 — надходження не є доходом; 36, 37, 68 — списання не є витратами
+    const la = t.ledgerAccount || '';
+    if (t.type === 'income') { if (la !== '68') income[m] += Math.max(0, amt - vat); }
     else if (t.type === 'refund_out') income[m] -= amt;      // повернення покупцю зменшує дохід
-    else if (t.type === 'expense' && !isOwnTaxPayment(t)) expense[m] += Math.max(0, amt - vat);
+    else if (t.type === 'expense' && !isOwnTaxPayment(t) && !['36', '37', '68'].includes(la)) expense[m] += Math.max(0, amt - vat);
   });
 
   const months = income.map((inc, i) => {

@@ -15,7 +15,9 @@ export const MIN_WAGE    = taxYear(new Date().getFullYear()).minWage;
 // від 03.12.2025 № 4695-IX). До 2022 р. було 15 МЗП.
 export const ESV_MAX_BASE = MIN_WAGE * 20;   // 172 940 грн
 export const ESV_MIN_AMOUNT = Math.round(MIN_WAGE * ESV_RATE * 100) / 100; // 1 902,34
-export const AVG_CALENDAR_DAYS = 29.3;
+// Середня кількість календарних днів у місяці (365 / 12) — для середньоденної зарплати,
+// коли немає помісячних даних. Раніше тут було 29,3 — такого показника в Порядку № 100 немає.
+export const AVG_CALENDAR_DAYS = 365 / 12;
 export const ANNUAL_LEAVE_DAYS = 24;
 
 export const INCOME_CODE_SALARY    = '101'; // зарплата

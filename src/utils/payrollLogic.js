@@ -76,14 +76,21 @@ export const calcGrossFromNet = (net, deductions = [], isFullMonth = true, opts 
 };
 
 // ─── Відпускні ──────────────────────────────────────────────────────
-// Розрахунок середньої денної зарплати для відпускних: 
-// порядок, затверджений постановою КМУ №100 від 08.02.1995.
-// Спрощена версія: беремо суму виплат за 12 місяців / (кількість місяців × 29.3)
-export const calcLeaveDaily = (monthlyPayments = []) => {
+// Середньоденна зарплата для відпускних (Порядок, затв. постановою КМУ від 08.02.1995 № 100):
+// заробіток за розрахунковий період / кількість календарних днів цього періоду.
+// monthlyPayments — суми по місяцях; periods — ті самі місяці у форматі 'РРРР-ММ'
+// (тоді береться фактична кількість днів кожного місяця). Без periods —
+// середня кількість днів місяця (365 / 12).
+// Святкові та неробочі дні з розрахунку не виключаються: у воєнний час
+// норми про них не застосовуються (ч. 6 ст. 6 Закону № 2136-IX).
+export const calcLeaveDaily = (monthlyPayments = [], periods = []) => {
   if (monthlyPayments.length === 0) return 0;
   const totalPaid = monthlyPayments.reduce((s, p) => s + (+p || 0), 0);
-  const months    = monthlyPayments.length;
-  return round2(totalPaid / (months * AVG_CALENDAR_DAYS));
+  const days = monthlyPayments.reduce((s, _p, i) => {
+    const m = /^(\d{4})-(\d{2})$/.exec(periods[i] || '');
+    return s + (m ? new Date(+m[1], +m[2], 0).getDate() : AVG_CALENDAR_DAYS);
+  }, 0);
+  return days > 0 ? round2(totalPaid / days) : 0;
 };
 
 // Відпускні = денна × к.д. відпустки
