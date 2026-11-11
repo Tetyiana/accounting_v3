@@ -3,6 +3,9 @@ import { useFop } from '../context/FopContext';
 import FopDocumentsSection from '../components/common/FopDocumentsSection';
 import { useAuth } from '../context/AuthContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
+import { epFixedMonthly } from '../constants/taxYears';
+
+const fmt2 = (n) => (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 import { EMPTY_FOP, BANK_ACCOUNT_EMPTY } from '../constants/fopFields';
 
 const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) => {
@@ -54,6 +57,11 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
       ...form,
       mainKved:       (form.mainKved       || '').replace(/,/g, '.').trim(),
       additionalKveds:(form.additionalKveds || '').replace(/,/g, '.').trim(),
+      // Числові поля: порожній рядок у numeric-колонку не записується
+      epRatePercent: (form.epRatePercent === '' || form.epRatePercent == null || Number.isNaN(+form.epRatePercent))
+        ? null : +form.epRatePercent,
+      ep4Annual: +form.ep4Annual || 0,
+      esvExempt: !!form.esvExempt,
     };
 
     if (mode === 'create') {
@@ -224,6 +232,39 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
                   {TAX_GROUPS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
                 </select>
               </div>
+              {(form.taxGroup === '1' || form.taxGroup === '2') && (
+                <div className="field" style={{maxWidth:360}}>
+                  <label>Ставка ЄП, встановлена місцевою радою, %
+                    {form.taxGroup === '1' ? ' прожиткового мінімуму (до 10)' : ' мінімальної зарплати (до 20)'}</label>
+                  <input type="number" name="epRatePercent" min="0" max={form.taxGroup === '1' ? 10 : 20} step="0.01"
+                    value={form.epRatePercent ?? ''} onChange={set}
+                    placeholder={form.taxGroup === '1' ? '10 — максимальна' : '20 — максимальна'} />
+                  <span className="cell-muted" style={{fontSize:'.78rem'}}>
+                    Зараз: {fmt2(epFixedMonthly(form.taxGroup, new Date().getFullYear(), form.epRatePercent))} грн на місяць.
+                    Порожнє поле — максимальна ставка.
+                  </span>
+                </div>
+              )}
+              {form.taxGroup === '4' && (
+                <div className="field" style={{maxWidth:360}}>
+                  <label>Річна сума ЄП 4 групи (з декларації), грн</label>
+                  <input type="number" name="ep4Annual" min="0" step="0.01"
+                    value={form.ep4Annual ?? ''} onChange={set} placeholder="0.00" />
+                </div>
+              )}
+              <div className="field-checks">
+                <label className="check-label">
+                  <input type="checkbox" name="esvExempt" checked={!!form.esvExempt} onChange={set} />
+                  Звільнений від сплати ЄСВ за себе
+                </label>
+              </div>
+              <p className="cell-muted" style={{fontSize:'.78rem', marginTop:0, maxWidth:560}}>
+                Позначайте, якщо ФОП має право не сплачувати ЄСВ за себе: пенсіонер за віком чи за вислугою
+                років, особа з інвалідністю (ч. 4 ст. 4 Закону № 2464-VI) або працює за основним місцем роботи
+                і роботодавець сплачує за нього ЄСВ не менше мінімального внеску (ч. 6 ст. 4).
+                Тоді ЄСВ за себе в розрахунках і термінах не нараховується. Позначка
+                застосовується до всього періоду розрахунку.
+              </p>
               <div className="field" style={{maxWidth:360}}>
                 <label>ІПН платника ПДВ</label>
                 <input name="vatCertificate" value={form.vatCertificate} onChange={set}

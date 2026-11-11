@@ -2,24 +2,21 @@
 // Ліміти визначені в розмірах МЗП, встановленої на 1 січня звітного року,
 // і протягом року не змінюються.
 //   1 група — 167 МЗП, 2 група — 834 МЗП, 3 група — 1167 МЗП.
-// МЗП на 01.01.2026 — 8647 грн (Закон від 03.12.2025 № 4695-IX).
+// МЗП по роках — у src/constants/taxYears.js.
 //
 // Наслідки перевищення (п. 293.4, пп. 298.2.3 ПКУ):
 //   – до суми перевищення застосовується ставка 15%;
 //   – платник зобов'язаний перейти на іншу групу або на загальну систему
 //     з першого числа місяця, наступного за кварталом перевищення.
 
-const MIN_WAGE_BY_YEAR = {
-  2025: 8000,
-  2026: 8647,
-};
-const LATEST_YEAR = 2026;
+import { taxYear, LIMIT_MULTIPLIER, EP_EXCESS_RATE } from '../constants/taxYears';
 
-const MULTIPLIER = { '1': 167, '2': 834, '3_5': 1167, '3_3_vat': 1167 };
+// Групи без ліміту доходу (загальна система, 4 група) у таблиці відсутні.
+const MULTIPLIER = LIMIT_MULTIPLIER;
 
-export const EXCESS_RATE = 0.15;
+export const EXCESS_RATE = EP_EXCESS_RATE;
 
-export const minWageFor = (year) => MIN_WAGE_BY_YEAR[+year] || MIN_WAGE_BY_YEAR[LATEST_YEAR];
+export const minWageFor = (year) => taxYear(year).minWage;
 
 // Ліміт для групи на рік. null — група без ліміту доходу (загальна система).
 export const incomeLimitFor = (taxGroup, year) => {

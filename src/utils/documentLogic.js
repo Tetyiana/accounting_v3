@@ -2,6 +2,7 @@
 // формування записів КДВ, авто-заповнення дебіторки/кредиторки.
 
 import { VAT_RATES } from '../constants/documentTypes';
+import { isOwnTaxPayment } from './generalSystem';
 
 // ─── Розрахунок рядка документа ─────────────────────────────────────
 export const calcItemAmounts = (item) => {
@@ -45,7 +46,7 @@ export const calcInvoicePaid = (invoiceId, payments = []) =>
 // ЄП — перша оплата.
 // Загальна система — перша з двох подій (оплата АБО підписаний акт).
 export const getFirstEvent = ({ invoice, acts = [], payments = [], taxGroup }) => {
-  const isUnified = ['1','2','3_5','3_3_vat'].includes(taxGroup);
+  const isUnified = ['1','2','3_5','3_3_vat','4'].includes(taxGroup);
 
   const firstPayment = [...payments]
     .filter(p => p.invoiceId === invoice.id)
@@ -75,7 +76,7 @@ export const getFirstEvent = ({ invoice, acts = [], payments = [], taxGroup }) =
 // Повертає масив рядків КДВ з урахуванням групи оподаткування та
 // правила першої події. Кожен рядок вже готовий до відображення.
 export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], transactions = [], taxGroup }) => {
-  const isUnified = ['1','2','3_5','3_3_vat'].includes(taxGroup);
+  const isUnified = ['1','2','3_5','3_3_vat','4'].includes(taxGroup);
   const entries   = [];
   let num = 1;
 
@@ -260,9 +261,10 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
       });
 
     // Прямі витрати з журналу
+    // Сплата власних ПДФО/ВЗ/ПДВ до бюджету — не витрати діяльності (ст. 177 ПКУ)
     transactions
-      .filter(t => t.type === 'expense')
-      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter(t => t.type === 'expense' && !isOwnTaxPayment(t))
+      .sort((a, b) => (a.date||'').localeCompare(b.date||''))
       .forEach(t => {
         const amt = +t.amount || 0;
         // Знаходимо відповідний запис доходу того ж дня або додаємо окремо

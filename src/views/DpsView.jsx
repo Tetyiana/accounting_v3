@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
-import { ESV_AMOUNT } from '../utils/taxLogic';
+import { taxYear, taxYearWarning, epFixedMonthly, isVatGroup } from '../constants/taxYears';
+import { DpsGeneral, DpsGroup4 } from './DpsGeneralView';
 import { buildDeclaration } from '../utils/dpsDeclaration';
 import { buildDeclarationHtml } from '../utils/dpsDeclarationPrint';
 import { checkIncomeLimit } from '../utils/incomeLimits';
@@ -37,9 +38,16 @@ const DpsView = () => {
   const isG3 = group === '3_5' || group === '3_3_vat';
   const epRate = group === '3_5' ? 0.05 : group === '3_3_vat' ? 0.03 : 0;
   const vzRate = 0.01;
-  const MIN_WAGE = 8647, LIVING_WAGE = 3328;
-  const epFixed = group === '1' ? round2(LIVING_WAGE * 0.10) : round2(MIN_WAGE * 0.20);
-  const vzFixed = round2(MIN_WAGE * 0.10);
+  // Показники обраного року (МЗП, ПМ), ставка ЄП місцевої ради, звільнення від ЄСВ
+  const yp = taxYear(selYear);
+  const MIN_WAGE = yp.minWage;
+  const epFixed = epFixedMonthly(group, selYear, activeFop?.epRatePercent);
+  const vzFixed = yp.vzFixed;
+  const esvExempt = !!activeFop?.esvExempt;
+  const ESV_AMOUNT = esvExempt ? 0 : yp.esvMin;
+  const yearWarning = taxYearWarning(selYear);
+  // ПДВ не входить до доходу платника ЄП (пп. 1 п. 292.11 ПКУ)
+  const vatPayer = isVatGroup(group, settings.isVatPayer);
 
   // Дохід за місяцями обраного року (касовий метод).
   // До доходу платника ЄП суми ПДВ не включаються (пп. 1 п. 292.11 ПКУ),
@@ -50,11 +58,11 @@ const DpsView = () => {
       .forEach(t => {
         const m = +(t.date || '').slice(5, 7);
         if (m < 1 || m > 12) return;
-        const vat = group === '3_3_vat' ? (+t.vatAmount || 0) : 0;
+        const vat = vatPayer ? (+t.vatAmount || 0) : 0;
         arr[m - 1] += Math.max(0, (+t.amount || 0) - vat);
       });
     return arr.map(round2);
-  }, [transactions, selYear, group]);
+  }, [transactions, selYear, vatPayer]);
 
   // Річний дохід наростаючим — для контролю граничного обсягу (п. 291.4 ПКУ)
   const incomeYear = useMemo(
@@ -128,7 +136,7 @@ const DpsView = () => {
       periodId: declPeriodId,
       minWage: MIN_WAGE,
       monthsOnSimplified,
-      esvBaseByMonth: Array(12).fill(MIN_WAGE),
+      esvBaseByMonth: Array(12).fill(esvExempt ? 0 : MIN_WAGE),
       prevRow12,
       prevRow23,
     });
@@ -188,10 +196,8 @@ const DpsView = () => {
     }
   };
 
-  if (!['1', '2', '3_5', '3_3_vat'].includes(group)) {
-    return <div className="view-placeholder"><h3>Звітність ДПС</h3>
-      <p>Для загальної системи декларація про майновий стан і доходи — в розробці.</p></div>;
-  }
+  if (group === '4') return <DpsGroup4 />;
+  if (!['1', '2', '3_5', '3_3_vat'].includes(group)) return <DpsGeneral />;
 
   return (
     <div className="view-dps">
@@ -216,6 +222,8 @@ const DpsView = () => {
             </select></div>
         )}
       </div>
+
+      {yearWarning && <div className="settings-msg" style={{ marginBottom: 12 }}>⚠ {yearWarning}</div>}
 
       {limitInfo.limit != null && limitInfo.level !== 'ok' && (
         <div className={`settings-msg${limitInfo.level === 'exceeded' ? ' settings-msg--error' : ''}`}
@@ -337,7 +345,7 @@ const DpsView = () => {
           Дохід рахується касовим методом з журналу операцій (усі «Надходження»).
           Кнопка «Сформувати декларацію» дає друковану форму для перенесення
           в Електронний кабінет платника. Строки подання: 3 група — 40 к.д. після
-          кварталу; 1-2 групи — до 1 березня наступного року.
+          кварталу; 1-2 групи — протягом 60 к.д. після закінчення року.{esvExempt ? ' ЄСВ за себе не нараховується (у профілі позначено звільнення).' : ''}
         </p>
       </div>
     </div>

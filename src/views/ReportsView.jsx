@@ -3,7 +3,9 @@ import { useData } from '../context/DataContext';
 import { useSettings } from '../context/SettingsContext';
 import { useFop } from '../context/FopContext';
 import { TAX_GROUPS } from '../constants/taxOptions';
-import { TAX_STRATEGIES, ESV_AMOUNT } from '../utils/taxLogic';
+import { TAX_STRATEGIES } from '../utils/taxLogic';
+import { taxYear, taxYearWarning, isVatGroup, isGeneralGroup } from '../constants/taxYears';
+import { isOwnTaxPayment } from '../utils/generalSystem';
 import { checkIncomeLimit } from '../utils/incomeLimits';
 
 const round2 = n => Math.round((+n || 0) * 100) / 100;
@@ -24,10 +26,14 @@ const ReportsView = () => {
     if (!generated) return null;
     const inRange = transactions.filter(t => t.date >= dateStart && t.date <= dateEnd);
     // ПДВ не входить до доходу платника ЄП (пп. 1 п. 292.11 ПКУ)
-    const vatPayer = settings.taxGroup === '3_3_vat';
+    // Те саме — для чистого доходу платника ПДВ на загальній системі.
+    const vatPayer = isVatGroup(settings.taxGroup, settings.isVatPayer);
     const income  = inRange.filter(t => t.type === 'income')
       .reduce((s,t) => s + Math.max(0, (+t.amount||0) - (vatPayer ? (+t.vatAmount||0) : 0)), 0);
-    const expense = inRange.filter(t => t.type === 'expense').reduce((s,t) => s + (+t.amount||0), 0);
+    const general = isGeneralGroup(settings.taxGroup);
+    // На загальній системі сплата власних ПДФО/ВЗ/ПДВ — не витрати діяльності
+    const expense = inRange.filter(t => t.type === 'expense' && !(general && isOwnTaxPayment(t)))
+      .reduce((s,t) => s + Math.max(0, (+t.amount||0) - (vatPayer ? (+t.vatAmount||0) : 0)), 0);
     const group   = TAX_GROUPS.find(g => g.id === settings.taxGroup);
 
     // Кількість місяців, за які реально виникло зобов'язання.
@@ -54,10 +60,18 @@ const ReportsView = () => {
       : `нараховано за ${months} міс. (${mFrom} … ${mTo})`;
 
     // Реальна стратегія по групі (з ЄСВ) замість спрощеного відсотка від доходу.
+    // Показники (МЗП, ПМ) — за роком кінця періоду.
+    const calcYear = +dateEnd.slice(0, 4);
+    const esvMin   = taxYear(calcYear).esvMin;
     const strategy = TAX_STRATEGIES[settings.taxGroup];
     const calc     = strategy
-      ? strategy(income, expense, { months })
-      : { tax: round2(ESV_AMOUNT * months), breakdown: { esv: round2(ESV_AMOUNT * months) }, note: '' };
+      ? strategy(income, expense, {
+          months, year: calcYear,
+          epRatePercent: activeFop?.epRatePercent,
+          esvExempt: activeFop?.esvExempt,
+          ep4Annual: activeFop?.ep4Annual,
+        })
+      : { tax: round2(esvMin * months), breakdown: { esv: round2(esvMin * months) }, note: '' };
 
     // Контроль граничного обсягу доходу за календарний рік (п. 291.4 ПКУ)
     const limitYear = +dateEnd.slice(0, 4);
@@ -88,6 +102,7 @@ const ReportsView = () => {
       breakdown: calc.breakdown, note: calc.note,
       group: group?.label, count: inRange.length, rows: inRange,
       months, monthsNote, limitInfo,
+      yearWarning: taxYearWarning(calcYear),
       paidToBudget, budgetBalance: totalAccrued - paidToBudget,
       ledgerEntries: buildLedgerEntries(inRange),
     };
@@ -121,6 +136,10 @@ const ReportsView = () => {
             {report.group} · {transactions.length} операцій усього · {report.count} за період
             {report.months > 0 && ` · ${report.months} міс.`}
           </div>
+
+          {report.yearWarning && (
+            <div className="settings-msg" style={{ margin: '10px 0' }}>⚠ {report.yearWarning}</div>
+          )}
 
           {report.limitInfo?.limit != null && report.limitInfo.level !== 'ok' && (
             <div className={`settings-msg${report.limitInfo.level === 'exceeded' ? ' settings-msg--error' : ''}`}

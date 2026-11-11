@@ -1,5 +1,6 @@
+import { taxYear } from '../constants/taxYears';
 import {
-  MIN_WAGE, ESV_MAX_BASE,
+  ESV_MAX_BASE,
   PERSON_TYPE_EMPLOYEE, PERSON_TYPE_DISABILITY,
 } from '../constants/payrollTypes';
 
@@ -54,9 +55,10 @@ const buildAppendix1 = (records, employees, period) => {
     // (для них ставка 8,41%). Максимальна база — 20 МЗП — діє для всіх.
     const disabled = !!(r.hasDisability || emp?.hasDisability);
     const gross = Math.max(+r.totalGross||0, 0);
+    const yp = taxYear(+year);   // МЗП і максимальна база — за роком звітного періоду
     const base = disabled
-      ? Math.min(gross, ESV_MAX_BASE)
-      : Math.min(Math.max(gross, MIN_WAGE), ESV_MAX_BASE);
+      ? Math.min(gross, yp.esvMaxBase)
+      : Math.min(Math.max(gross, yp.minWage), yp.esvMaxBase);
     return `
     <ROW ROWNUM="${i+1}">
       <HTIN>${esc(emp?.rnokpp)}</HTIN>

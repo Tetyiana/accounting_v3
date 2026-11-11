@@ -5,6 +5,7 @@ import {
   PDFO_RATE, VZ_RATE, ESV_RATE, ESV_RATE_DISABILITY,
   MIN_WAGE, ESV_MAX_BASE, AVG_CALENDAR_DAYS,
 } from '../constants/payrollTypes';
+import { taxYear } from '../constants/taxYears';
 
 // ─── Базові розрахунки ──────────────────────────────────────────────
 // isFullMonth = true якщо не було відпустки за вл. рах., лікарняних тощо.
@@ -17,6 +18,10 @@ import {
 export const calcNetFromGross = (gross, deductions = [], isFullMonth = true, opts = {}) => {
   const hasDisability = !!opts.hasDisability;
   const esvRate = hasDisability ? ESV_RATE_DISABILITY : ESV_RATE;
+  // МЗП і максимальна база — за роком періоду нарахування (opts.period = 'РРРР-ММ')
+  const yp = opts.period ? taxYear(+String(opts.period).slice(0, 4)) : null;
+  const minWage    = yp ? yp.minWage    : MIN_WAGE;
+  const esvMaxBase = yp ? yp.esvMaxBase : ESV_MAX_BASE;
   const g    = +gross || 0;
   const pdfo = round2(g * PDFO_RATE);
   const vz   = round2(g * VZ_RATE);
@@ -37,9 +42,9 @@ export const calcNetFromGross = (gross, deductions = [], isFullMonth = true, opt
 
   // ЄСВ: від мінімалки лише якщо повний місяць і факт. брутто < мінімалки.
   // Для працівників з інвалідністю донарахування до мінімального внеску немає.
-  const esvBase = (!hasDisability && isFullMonth && g > 0 && g < MIN_WAGE)
-    ? MIN_WAGE
-    : Math.min(Math.max(g, 0), ESV_MAX_BASE);
+  const esvBase = (!hasDisability && isFullMonth && g > 0 && g < minWage)
+    ? minWage
+    : Math.min(Math.max(g, 0), esvMaxBase);
   const esv = round2(esvBase * esvRate);
 
   return {

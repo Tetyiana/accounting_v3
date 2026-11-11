@@ -171,11 +171,11 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const totalGross = round2(salaryAfterUnpaid + sickInfo.employerAmount + leaveAmt + compAmt + (+otherAccruals || 0));
 
   const calc = useMemo(() => {
-    const esvOpts = { hasDisability: !!employee.hasDisability };
+    const esvOpts = { hasDisability: !!employee.hasDisability, period };
     if (mode === 'gross') return calcNetFromGross(totalGross, deductions, isFullMonth, esvOpts);
     const base = calcGrossFromNet(+netInput || 0, deductions, false, esvOpts); // неповний місяць при нетто-режимі
     return base || calcNetFromGross(0, deductions, isFullMonth, esvOpts);
-  }, [mode, totalGross, netInput, deductions, isFullMonth, employee.hasDisability]);
+  }, [mode, totalGross, netInput, deductions, isFullMonth, employee.hasDisability, period]);
 
   const addDeduction = () => setDeductions(p => [
     ...p, { id: Date.now().toString(), type: 'executive', label: 'Виконавчий лист', base: 'percent', value: '', amount: 0 }
@@ -204,7 +204,7 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
       const salaryNet2 = round2(gInput - unpaid2.deduction);
       const totalGross2 = round2(salaryNet2 + sick2.employerAmount + leave2 + comp2 + other);
 
-      const esvOpts2 = { hasDisability: !!employee.hasDisability };
+      const esvOpts2 = { hasDisability: !!employee.hasDisability, period };
       const finalCalc = mode === 'gross'
         ? calcNetFromGross(totalGross2, deductions, fullMonth, esvOpts2)
         : (calcGrossFromNet(+netInput || 0, deductions, false, esvOpts2) || calcNetFromGross(0, deductions, fullMonth, esvOpts2));
