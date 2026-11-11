@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
 import { useSettings } from '../context/SettingsContext';
 import AttachmentsList from '../components/common/AttachmentsList';
+import Autocomplete from '../components/common/Autocomplete';
 import { calculateRunningBalance } from '../utils/accountingLogic';
 import UploadOperation from '../components/Operations/UploadOperation';
 import ReviewOperation from '../components/Operations/ReviewOperation';
@@ -70,7 +71,7 @@ const JournalView = () => {
   const { settings } = useSettings();
   // Для ФОП 3 групи — платника ПДВ сума ПДВ не входить до доходу (пп. 1 п. 292.11 ПКУ),
   // тому її треба виділяти з надходження.
-  const needVatSplit = settings.taxGroup === '3_3_vat' || settings.isVatPayer;
+  const needVatSplit = settings.taxGroup === '3_3_vat' || settings.taxGroup === 'general_vat' || settings.isVatPayer;
   const [showForm, setShowForm]   = useState(false);
   const [editId, setEditId]       = useState(null);
   const [linkInvoiceId, setLinkInvoiceId] = useState('');
@@ -78,6 +79,10 @@ const JournalView = () => {
   const [opType, setOpType]       = useState('income');
   const [form, setForm]           = useState(EMPTY);
   const [filter, setFilter]       = useState({ dateStart: '', dateEnd: '', counterparty: '', amountMin: '', amountMax: '', opKind: '' });
+  // Контрагенти з довідника — для вибору у формі операції
+  const clientOptions = useMemo(
+    () => (clients || []).map(c => ({ id: c.id, label: c.name || '', sub: c.ipn ? `ІПН/ЄДРПОУ ${c.ipn}` : '' })).filter(o => o.label),
+    [clients]);
   const [err, setErr]             = useState('');
   const [isBankImport, setIsBankImport] = useState(false);
 
@@ -364,7 +369,12 @@ const JournalView = () => {
             </div>
             <div className="field">
               <label>Контрагент <span className="req">*</span></label>
-              <input name="counterparty" value={form.counterparty} onChange={set} placeholder="Назва або ПІБ" />
+              <Autocomplete
+                value={form.counterparty}
+                onChange={v => setForm(p => ({ ...p, counterparty: v }))}
+                options={clientOptions}
+                placeholder="Назва або ПІБ — вибір з довідника чи новий"
+              />
             </div>
             <div className="field">
               <label>Сума, грн <span className="req">*</span></label>
