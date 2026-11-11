@@ -61,8 +61,11 @@ async function main() {
   console.log('Ресурс:', res.name);
 
   const buf = Buffer.from(await fetch(res.url).then((r) => r.arrayBuffer()));
-  // Реєстр публікується у windows-1251
-  const text = new TextDecoder('windows-1251').decode(buf);
+  // Реєстр публікували у windows-1251, з 2026 р. трапляється і UTF-8.
+  // Пробуємо строгий UTF-8; якщо байти не є валідним UTF-8 — це windows-1251.
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { text = new TextDecoder('windows-1251').decode(buf); }
 
   const lines = text.split(/\r?\n/).filter(Boolean);
   const sep = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';

@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check:schema": "node scripts/check-schema.mjs",
-    "sync:forms": "node scripts/sync-dps-forms.mjs"
+    "sync:forms": "node scripts/sync-dps-forms.mjs",
+    "test:tax": "rolldown scripts/test-tax.mjs --file node_modules/.cache/test-tax.mjs --platform node --log-level silent && node node_modules/.cache/test-tax.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.5",
