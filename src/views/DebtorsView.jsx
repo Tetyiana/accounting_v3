@@ -8,7 +8,7 @@ import { computeAutoDebts, fmtMoney } from '../utils/documentLogic';
 const EMPTY = { date: new Date().toISOString().slice(0,10), type: 'debtor', counterparty: '', amount: '', dueDate: '', status: 'pending' };
 
 const DebtorsView = () => {
-  const { debts, addDebt, updateDebt, deleteDebt, invoices, acts, payments } = useData();
+  const { debts, addDebt, updateDebt, deleteDebt, invoices, acts, payments, transactions } = useData();
   const { settings } = useSettings();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm]         = useState(EMPTY);
@@ -19,8 +19,8 @@ const DebtorsView = () => {
 
   // Авто-сформовані борги з документообігу
   const autoDebts = useMemo(() =>
-    computeAutoDebts({ invoices, acts, payments }),
-    [invoices, acts, payments]
+    computeAutoDebts({ invoices, acts, payments, transactions }),
+    [invoices, acts, payments, transactions]
   );
 
   // Об'єднуємо ручні + авто
@@ -64,7 +64,7 @@ const DebtorsView = () => {
       if (row.isAuto) {
         return (
           <span className={`badge badge--${row.status === 'paid' ? 'success' : row.status === 'overdue' ? 'danger' : row.status === 'advance' ? 'warning' : 'muted'}`}>
-            {row.status === 'advance' ? 'Аванс' : row.status === 'paid' ? 'Погашено' : row.status === 'overdue' ? 'Просрочено' : 'Очікує'}
+            {row.status === 'advance' ? 'Аванс' : row.status === 'invoice' ? 'Рахунок без акта' : row.status === 'paid' ? 'Погашено' : row.status === 'overdue' ? 'Просрочено' : 'Очікує'}
           </span>
         );
       }
@@ -92,7 +92,8 @@ const DebtorsView = () => {
       </div>
 
       <p className="cell-muted" style={{ marginBottom: 12, fontSize: '.83rem' }}>
-        Авто-записи формуються з рахунків/актів/платежів у розділі «Продажі/Закупівлі».
+        Авто-записи формуються з актів, рахунків і надходжень: оплата контрагента закриває його акти
+        від найдавнішого, оплата понад акти показується як аванс.
         Ручне введення — тільки для введення залишків або позарахункових операцій.
       </p>
 

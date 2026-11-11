@@ -3,6 +3,7 @@
 
 import { VAT_RATES } from '../constants/documentTypes';
 import { isOwnTaxPayment } from './generalSystem';
+import { buildSettlements } from './settlements';
 
 // ─── Розрахунок рядка документа ─────────────────────────────────────
 export const calcItemAmounts = (item) => {
@@ -293,20 +294,59 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
 // ─── Автоматичне формування дебіторки/кредиторки ────────────────────
 // Повертає масив записів боргів, що виводяться в DebtorsView.
 // Не пише в localStorage — це computed дані на основі рахунків/актів/платежів.
-export const computeAutoDebts = ({ invoices = [], acts = [], payments = [] }) => {
+export const computeAutoDebts = ({ invoices = [], acts = [], payments = [], transactions = [] }) => {
   const debts = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const invById = new Map(invoices.map(i => [i.id, i]));
+  const invoicesWithActs = new Set(acts.filter(a => a.invoiceId).map(a => a.invoiceId));
 
+  // 1. Борги за актами і накладними: оплата контрагента гасить його акти від найдавнішого.
+  buildSettlements({ acts, invoices, payments, transactions }).forEach(p => {
+    const customer = p.side === 'customer';
+    p.docs.forEach(d => {
+      if (d.remaining <= 0) return;
+      const inv = invById.get(d.act.invoiceId);
+      const dueDate = inv?.dueDate || '';
+      const isOverdue = !!dueDate && dueDate < today;
+      const partial = d.paid > 0 ? `, оплачено ${fmtMoney(d.paid)} з ${fmtMoney(d.total)}` : '';
+      debts.push({
+        id:           `auto_act_${d.act.id}`,
+        isAuto:       true,
+        actId:        d.act.id,
+        invoiceId:    d.act.invoiceId || null,
+        type:         customer ? 'debtor' : 'creditor',
+        counterparty: p.name || 'Без назви',
+        amount:       d.remaining,
+        date:         d.act.date,
+        dueDate,
+        status:       isOverdue ? 'overdue' : 'pending',
+        note:         `Акт №${d.act.number || 'б/н'} від ${d.act.date}${partial}`
+                      + (isOverdue ? `, термін оплати минув (${dueDate})` : ''),
+      });
+    });
+    // Оплата понад акти — аванс: одержаний від покупця (ми винні) або виданий постачальнику (нам винні)
+    if (p.advance > 0) {
+      debts.push({
+        id:           `auto_adv_${p.side}_${p.key}`,
+        isAuto:       true,
+        type:         customer ? 'creditor' : 'debtor',
+        counterparty: p.name || 'Без назви',
+        amount:       p.advance,
+        date:         today,
+        dueDate:      '',
+        status:       'advance',
+        note:         customer ? 'Аванс одержано, акта ще немає' : 'Аванс сплачено, акта ще немає',
+      });
+    }
+  });
+
+  // 2. Рахунки без актів: виставлено, але не оплачено — очікувана оплата.
   invoices.forEach(inv => {
     if (inv.status === 'cancelled') return;
-    const total = +inv.total || 0;
-    const paid  = calcInvoicePaid(inv.id, payments);
-    const remaining = total - paid;
+    if (invoicesWithActs.has(inv.id)) return;        // борг уже показано за актом
+    const remaining = (+inv.total || 0) - calcInvoicePaid(inv.id, payments);
     if (remaining <= 0) return;
-
-    // Перевіряємо чи є акт (якщо є — це реальна заборгованість, не аванс)
-    const hasSignedAct = acts.some(a => a.invoiceId === inv.id && a.status === 'signed');
-    const isOverdue = inv.dueDate && inv.dueDate < new Date().toISOString().slice(0,10);
-
+    const isOverdue = inv.dueDate && inv.dueDate < today;
     debts.push({
       id:           `auto_${inv.id}`,
       isAuto:       true,
@@ -316,18 +356,15 @@ export const computeAutoDebts = ({ invoices = [], acts = [], payments = [] }) =>
       amount:       remaining,
       date:         inv.date,
       dueDate:      inv.dueDate || '',
-      status:       isOverdue ? 'overdue' : (hasSignedAct ? 'pending' : 'advance'),
+      status:       isOverdue ? 'overdue' : 'invoice',
       note:         isOverdue
-                      ? `Рах. №${inv.number}, термін оплати минув (${inv.dueDate})`
-                      : hasSignedAct
-                        ? `Рах. №${inv.number}, акт підписано`
-                        : `Рах. №${inv.number}, аванс (акт не підписано)`,
+                      ? `Рах. №${inv.number}, термін оплати минув (${inv.dueDate}), акта немає`
+                      : `Рах. №${inv.number} виставлено, акта немає`,
     });
   });
 
   return debts;
 };
 
-// ─── Форматування суми ───────────────────────────────────────────────
 export const fmtMoney = (n) =>
   (+n || 0).toLocaleString('uk-UA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

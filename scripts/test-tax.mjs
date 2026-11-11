@@ -7,6 +7,9 @@ import { incomeLimitFor, checkIncomeLimit } from '../src/utils/incomeLimits.js';
 import { buildDeadlines } from '../src/utils/deadlines.js';
 import { calcGeneralYear, isOwnTaxPayment } from '../src/utils/generalSystem.js';
 import { calcNetFromGross } from '../src/utils/payrollLogic.js';
+import { buildLedgerEntries } from '../src/utils/accountingLogic.js';
+import { buildSettlements, partyKey } from '../src/utils/settlements.js';
+import { computeAutoDebts } from '../src/utils/documentLogic.js';
 
 const y26 = taxYear(2026);
 assert.equal(y26.esvMin, 1902.34); assert.equal(y26.vzFixed, 864.70);
@@ -99,4 +102,56 @@ has(L, '2026-01-30', 'Сплата ЄП 4 групи за IV кв. 2025 (30%');
 L = dl({ taxGroup: '3_5', esvExempt: true }, '2026-04-10T12:00:00');
 assert.ok(!L.some(x => x.title.includes('ЄСВ за себе')));
 assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
+// ── Розрахунки з покупцями і постачальниками (рах. 36, 63) ──
+{
+  assert.equal(partyKey('ТОВ "Ромашка"'), partyKey('ромашка  тов'));
+  const invoices = [
+    { id: 'I1', direction: 'outgoing', number: '1', date: '2026-01-05', clientName: 'ТОВ "Ромашка"', total: 1000, status: 'sent' },
+    { id: 'I2', direction: 'outgoing', number: '2', date: '2026-03-01', clientName: 'ФОП Лілія', total: 1000, status: 'sent' },
+  ];
+  const acts = [
+    { id: 'A1', invoiceId: 'I1', direction: 'outgoing', type: 'act', number: '1', date: '2026-01-10', total: 1000, clientName: '' },
+    { id: 'A2', invoiceId: null, direction: 'outgoing', type: 'act', number: '2', date: '2026-02-01', total: 500, clientName: 'Ромашка ТОВ' },
+    { id: 'A3', invoiceId: null, direction: 'incoming', type: 'act', number: '77', date: '2026-02-03', total: 400, clientName: 'ТОВ Постач' },
+    { id: 'A4', invoiceId: null, direction: 'outgoing', type: 'act', number: '3', date: '2026-02-10', total: 1200, vatAmount: 200, clientName: 'ПП Мак' },
+  ];
+  const payments = [
+    { id: 'P1', invoiceId: 'I1', direction: 'outgoing', date: '2026-01-15', amount: 1000 },
+    { id: 'P2', invoiceId: 'I2', direction: 'outgoing', date: '2026-03-02', amount: 700 },
+  ];
+  const transactions = [
+    { id: 'T1', date: '2026-01-15', type: 'income', amount: 1000, counterparty: 'ТОВ "Ромашка"', invoicePaymentId: 'P1' },
+    { id: 'T2', date: '2026-02-05', type: 'income', amount: 200, counterparty: 'ромашка' },
+    { id: 'T3', date: '2026-02-06', type: 'income', amount: 50, counterparty: 'Іванов', paymentMethod: 'cash' },
+    { id: 'T4', date: '2026-03-02', type: 'income', amount: 700, counterparty: 'ФОП Лілія', invoicePaymentId: 'P2' },
+    { id: 'T5', date: '2026-02-04', type: 'expense', amount: 400, counterparty: 'Постач ТОВ' },
+    { id: 'T6', date: '2026-02-07', type: 'expense', amount: 90, counterparty: 'Оренда' },
+  ];
+  const docs = { acts, invoices, payments };
+  const E = buildLedgerEntries(transactions, docs);
+  const dc = (id) => { const e = E.find(x => x.id === id); return `${e.debit.code}-${e.credit.code}-${e.amount}`; };
+  assert.equal(dc('act_A1_n'), '36-70-1000');
+  assert.equal(dc('T1'), '31-36-1000');
+  assert.equal(dc('T2'), '31-36-200');       // без прив'язки, за назвою контрагента
+  assert.equal(dc('T3'), '30-70-50');        // покупець без документів — одразу дохід
+  assert.equal(dc('T4'), '31-36-700');       // аванс за рахунком без акта
+  assert.equal(dc('act_A3_n'), '84-63-400');
+  assert.equal(dc('T5'), '63-31-400');
+  assert.equal(dc('T6'), '84-31-90');
+  assert.equal(dc('act_A4_n'), '36-70-1000'); assert.equal(dc('act_A4_v'), '36-64-200');
+  const bal = (code) => Math.round(E.reduce((s, e) => s + (e.debit.code === code ? e.amount : 0) - (e.credit.code === code ? e.amount : 0), 0) * 100) / 100;
+  assert.equal(bal('36'), 1000 + 500 + 1200 - 1000 - 200 - 700);   // 800
+  assert.equal(bal('63'), 0);
+  const S = buildSettlements({ ...docs, transactions });
+  const rom = S.find(p => p.name.includes('Ромашка'));
+  assert.equal(rom.balance, 300); assert.equal(rom.docs[0].remaining, 0); assert.equal(rom.docs[1].remaining, 300);
+  const D = computeAutoDebts({ ...docs, transactions });
+  const d = (part) => D.find(x => x.note.includes(part));
+  assert.equal(D.length, 4, JSON.stringify(D.map(x => x.note)));
+  assert.equal(d('Акт №2').amount, 300); assert.equal(d('Акт №2').type, 'debtor');
+  assert.equal(d('Акт №3').amount, 1200);
+  assert.equal(d('Аванс одержано').amount, 700); assert.equal(d('Аванс одержано').type, 'creditor');
+  assert.equal(d('Рах. №2').amount, 300);
+  assert.ok(!d('Акт №1') && !d('Акт №77'));
+}
 console.log('ALL OK');

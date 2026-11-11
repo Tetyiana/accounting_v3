@@ -13,7 +13,7 @@ import { buildLedgerEntries } from '../utils/accountingLogic';
 import { exportJSON, exportCSV } from '../utils/exportUtils';
 
 const ReportsView = () => {
-  const { transactions, payrollRecords } = useData();
+  const { transactions, payrollRecords, acts, invoices, payments } = useData();
   const { settings }      = useSettings();
   const { activeFop }     = useFop();
   const year              = new Date().getFullYear();
@@ -104,9 +104,13 @@ const ReportsView = () => {
       months, monthsNote, limitInfo,
       yearWarning: taxYearWarning(calcYear),
       paidToBudget, budgetBalance: totalAccrued - paidToBudget,
-      ledgerEntries: buildLedgerEntries(inRange),
+      // Проводки періоду: операції банку/каси + акти з датою в періоді
+      ledgerEntries: buildLedgerEntries(inRange, {
+        acts: (acts || []).filter(a => a.date >= dateStart && a.date <= dateEnd),
+        invoices, payments,
+      }),
     };
-  }, [generated, transactions, dateStart, dateEnd, settings, activeFop, payrollRecords]);
+  }, [generated, transactions, dateStart, dateEnd, settings, activeFop, payrollRecords, acts, invoices, payments]);
 
   const fmt = n => n.toLocaleString('uk-UA', { minimumFractionDigits: 2 }) + ' грн';
 

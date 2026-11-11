@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
 import { buildLedgerEntries, LEDGER_ACCOUNTS } from '../utils/accountingLogic';
+import { buildSettlements } from '../utils/settlements';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
 
@@ -10,19 +11,40 @@ import { openPrintWindow } from '../utils/printWindow';
 // 2) Журнал-ордер по обраному рахунку (усі проводки де рахунок бере участь)
 
 const round2 = n => Math.round((+n || 0) * 100) / 100;
+const signLabel = (v) => (v > 0 ? ' (Дт)' : v < 0 ? ' (Кт)' : '');
 const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); };
 
 const AccountingView = () => {
-  const { transactions } = useData();
+  const { transactions, acts, invoices, payments } = useData();
   const { activeFop } = useFop();
   const [tab, setTab] = useState('chess');
   const [dateStart, setDateStart] = useState(monthAgo());
   const [dateEnd, setDateEnd] = useState(new Date().toISOString().slice(0, 10));
   const [selAcc, setSelAcc] = useState('31');
 
-  const entries = useMemo(() => buildLedgerEntries(transactions)
+  const allEntries = useMemo(
+    () => buildLedgerEntries(transactions, { acts, invoices, payments }),
+    [transactions, acts, invoices, payments]);
+  const entries = useMemo(() => allEntries
     .filter(e => (!dateStart || e.date >= dateStart) && (!dateEnd || e.date <= dateEnd)),
-    [transactions, dateStart, dateEnd]);
+    [allEntries, dateStart, dateEnd]);
+
+  // Сальдо обраного рахунка: на початок періоду, обороти, на кінець (Дт − Кт)
+  const accBalance = useMemo(() => {
+    const side = (e) => (e.debit.code === selAcc ? e.amount : 0) - (e.credit.code === selAcc ? e.amount : 0);
+    const opening = round2(allEntries.filter(e => dateStart && e.date < dateStart).reduce((s, e) => s + side(e), 0));
+    const closing = round2(allEntries.filter(e => !dateEnd || e.date <= dateEnd).reduce((s, e) => s + side(e), 0));
+    return { opening, closing };
+  }, [allEntries, selAcc, dateStart, dateEnd]);
+
+  // Розрахунки по контрагентах на кінець періоду — для рахунків 36 і 63
+  const partyRows = useMemo(() => {
+    if (selAcc !== '36' && selAcc !== '63') return [];
+    const side = selAcc === '36' ? 'customer' : 'supplier';
+    return buildSettlements({ acts, invoices, payments, transactions, asOf: dateEnd })
+      .filter(p => p.side === side && (p.billed || p.received))
+      .sort((a, b) => a.name.localeCompare(b.name, 'uk'));
+  }, [selAcc, acts, invoices, payments, transactions, dateEnd]);
 
   // Шахматка: matrix[дебет][кредит] = сума
   const chess = useMemo(() => {
@@ -164,6 +186,10 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
                 </tr>
               ))}
               <tr>
+                <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Сальдо на початок періоду{signLabel(accBalance.opening)}:</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Math.abs(accBalance.opening))}</td>
+              </tr>
+              <tr>
                 <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Оборот по дебету рахунка {selAcc}:</td>
                 <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(accTotals.debit)}</td>
               </tr>
@@ -171,8 +197,45 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
                 <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Оборот по кредиту рахунка {selAcc}:</td>
                 <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(accTotals.credit)}</td>
               </tr>
+              <tr>
+                <td colSpan={5} style={{ fontWeight: 700, textAlign: 'right' }}>Сальдо на кінець періоду{signLabel(accBalance.closing)}:</td>
+                <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Math.abs(accBalance.closing))}</td>
+              </tr>
             </tbody>
           </table>
+
+          {partyRows.length > 0 && (
+            <>
+              <h3 style={{ margin: '18px 0 8px', fontSize: '1rem' }}>
+                {selAcc === '36' ? 'Розрахунки з покупцями' : 'Розрахунки з постачальниками'} на {dateEnd || 'сьогодні'}
+              </h3>
+              <table className="data-table">
+                <thead><tr>
+                  <th>Контрагент</th>
+                  <th style={{ textAlign: 'right' }}>{selAcc === '36' ? 'Акти, накладні' : 'Отримано за актами'}</th>
+                  <th style={{ textAlign: 'right' }}>Оплачено</th>
+                  <th style={{ textAlign: 'right' }}>{selAcc === '36' ? 'Борг покупця' : 'Наш борг'}</th>
+                  <th style={{ textAlign: 'right' }}>Аванс</th>
+                  <th>Неоплачені документи</th>
+                </tr></thead>
+                <tbody>
+                  {partyRows.map(p => (
+                    <tr key={p.key}>
+                      <td>{p.name}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtMoney(p.billed)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtMoney(p.received)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{p.balance > 0 ? fmtMoney(p.balance) : '—'}</td>
+                      <td style={{ textAlign: 'right' }}>{p.advance > 0 ? fmtMoney(p.advance) : '—'}</td>
+                      <td className="cell-muted">
+                        {p.docs.filter(d => d.remaining > 0).map(d =>
+                          `№${d.act.number || 'б/н'} від ${d.act.date} — ${fmtMoney(d.remaining)}`).join('; ') || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       )}
     </div>

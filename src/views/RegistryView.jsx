@@ -25,9 +25,9 @@ const RegistryView = () => {
   const allDocs = useMemo(() => {
     const rows = [];
     // Грошові операції з проводками
-    const entries = buildLedgerEntries(transactions || []);
+    const entries = buildLedgerEntries(transactions || [], { acts, invoices, payments });
     (transactions || []).forEach(t => {
-      const entry = entries.find(e => e.transactionId === t.id);
+      const entry = entries.find(e => e.sourceType === 'transaction' && e.id === t.id);
       rows.push({
         id: t.id, kind: 'transaction', kindLabel: 'Грошова операція',
         number: '', date: t.date, counterparty: t.counterparty || '',
