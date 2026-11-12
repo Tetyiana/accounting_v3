@@ -10,10 +10,19 @@ const parse = (s) => { const [y, m, d] = String(s).slice(0, 10).split('-').map(N
 const month = (s) => String(s || '').slice(0, 7);
 
 export const VAT_RATE_LIST = [20, 7, 14, 0];
+// Ставки для позицій ПН. Для нульових — код ставки з графи 8 ПН:
+// 901 — 0 % при експорті, 902 — 0 % за іншими операціями, 903 — звільнено від оподаткування.
+export const VAT_RATE_OPTIONS = [
+  { id: '20', rate: 20, label: '20 %' }, { id: '7', rate: 7, label: '7 %' }, { id: '14', rate: 14, label: '14 %' },
+  { id: '901', rate: 0, label: '0 % — експорт' }, { id: '902', rate: 0, label: '0 % — інші операції' },
+  { id: '903', rate: 0, label: 'Без ПДВ — звільнено' },
+];
+export const rateId = (it) => (+it.rate > 0 ? String(+it.rate) : String(it.rateCode || 902));
 
 // Умовні ІПН покупця (пп. 4, 10–12 Порядку № 1307)
 export const IPN_NONPAYER = '100000000000';
 export const IPN_SELF = '600000000000';
+export const IPN_NONRESIDENT = '500000000000';   // постачальник-нерезидент (п. 12 Порядку № 1307)
 
 // Види ПН. reasonType — «Не підлягає наданню отримувачу (покупцю) з причини»;
 // consolidatedCode — код ознаки «Зведена податкова накладна».
@@ -24,6 +33,7 @@ export const PN_SPECS = [
   { id: 'rhythm', label: 'Зведена на ритмічні постачання платнику (код 4, п. 201.4 ПКУ)', consolidatedCode: '4' },
   { id: 'rhythm_nonpayer', label: 'Зведена на ритмічні постачання неплатнику (код 4, тип причини 02)', consolidatedCode: '4', reasonType: '02', buyer: 'Неплатник', ipn: IPN_NONPAYER },
   { id: 'self198', label: 'Зведена за п. 198.5 ПКУ — компенсуючі зобов\'язання (код 1)', consolidatedCode: '1', self: true, ipn: IPN_SELF, reasons: ['04', '08', '09', '13'] },
+  { id: 'nonresident', label: 'Послуги від нерезидента — складає отримувач (тип причини 14, п. 208.2 ПКУ)', reasonType: '14', nonres: true },
   { id: 'self199', label: 'Зведена за п. 199.1 ПКУ — пропорційний кредит (код 2)', consolidatedCode: '2', self: true, ipn: IPN_SELF, reasons: ['08', '09'] },
 ];
 export const REASON_TYPES = {
@@ -33,10 +43,14 @@ export const REASON_TYPES = {
   '09': 'постачання для операцій, звільнених від оподаткування ПДВ',
   '11': 'складена за щоденними підсумками операцій',
   '13': 'використання не в господарській діяльності',
+  '14': 'складена отримувачем (покупцем) послуг від нерезидента',
 };
 export const specOf = (v) => PN_SPECS.find(s => s.id === (v.spec || '')) || PN_SPECS[0];
 export const isSelfPn = (v) => !!specOf(v).self;
 export const isNonpayerPn = (v) => specOf(v).ipn === IPN_NONPAYER;
+export const isNonresPn = (v) => !!specOf(v).nonres;
+// Імпорт: податковий кредит за митною декларацією, без реєстрації в ЄРПН (п. 198.2, 201.12 ПКУ)
+export const isImportDoc = (v) => v.direction === 'incoming' && v.spec === 'import';
 
 // Причини коригування (коди графи 2.1 РК)
 export const RK_REASONS = [
@@ -71,7 +85,10 @@ export const vatTotals = (v) => {
   for (const r of Object.keys(byRate)) byRate[r].vat = r2(byRate[r].base * +r / 100);
   const base = r2(Object.values(byRate).reduce((s, x) => s + x.base, 0));
   const vat = r2(Object.values(byRate).reduce((s, x) => s + x.vat, 0));
-  return { byRate, base, vat, total: r2(base + vat) };
+  // обсяги без ПДВ за кодами ставки: експорт, інші нульові, звільнені
+  const zero = { 901: 0, 902: 0, 903: 0 };
+  for (const l of lines) if (!l.rate) { const c = +l.rateCode || 902; zero[c] = r2((zero[c] || 0) + l.base); }
+  return { byRate, base, vat, total: r2(base + vat), zero };
 };
 
 // ─── Нумерація виданих ПН/РК: у межах місяця, без нулів на початку (п. 6 Порядку № 1307)
@@ -121,6 +138,7 @@ export const declarationSlot = (v) => {
   const out = v.direction === 'outgoing';
   const side = out ? 'oblig' : 'credit';
   const row = v.kind === 'rk' ? 'adjust' : (isSelfPn(v) ? 'self' : 'main');
+  if (isImportDoc(v)) return { period: month(v.date), side: 'credit', row: 'import', pending: '' };
   const needsReg = out ? (v.kind === 'rk' && t.vat < 0) : !(v.kind === 'rk' && t.vat < 0);
   if (!needsReg) return { period: month(v.date), side, row, pending: '' };
   if (!v.registered) {
@@ -143,8 +161,26 @@ export const calcVatMonth = (vatInvoices, period, carryIn = 0) => {
   const res = {
     period, oblig: emptyRates(), self: emptyRates(), credit: emptyRates(),
     obligAdjust: { base: 0, vat: 0 }, creditAdjust: { base: 0, vat: 0 }, pending: [], carryIn: r2(carryIn),
+    zero: { 901: 0, 902: 0, 903: 0 },                                  // рядки 2, 3, 5
+    nonres: emptyRates(), nonresCredit: emptyRates(), importCredit: emptyRates(),   // рядки 6, 13, 11
+  };
+  const addTo = (bucket, t) => {
+    for (const [rate, x] of Object.entries(t.byRate)) {
+      const b = bucket[rate] || (bucket[rate] = { base: 0, vat: 0 });
+      b.base = r2(b.base + x.base); b.vat = r2(b.vat + x.vat);
+    }
   };
   for (const v of vatInvoices) {
+    // Послуги від нерезидента (п. 208.2 ПКУ): зобов'язання — за датою ПН (рядок 6);
+    // кредит (рядок 13) — після реєстрації цієї ПН: вчасно — той самий період, із запізненням — період реєстрації.
+    if (isNonresPn(v) && v.direction === 'outgoing' && v.kind !== 'rk') {
+      const t = vatTotals(v);
+      if (month(v.date) === period) addTo(res.nonres, t);
+      if (!v.registered) {
+        if (month(v.date) <= period) res.pending.push({ doc: v, reason: 'ПН на послуги нерезидента не зареєстровано в ЄРПН — зобов\'язання нараховано, кредит не враховано' });
+      } else if ((isRegisteredOnTime(v) ? month(v.date) : month(v.registrationDate)) === period) addTo(res.nonresCredit, t);
+      continue;
+    }
     const slot = declarationSlot(v);
     if (slot.pending && month(v.date) <= period) { res.pending.push({ doc: v, reason: slot.pending }); continue; }
     if (slot.period !== period) continue;
@@ -154,15 +190,14 @@ export const calcVatMonth = (vatInvoices, period, carryIn = 0) => {
       a.base = r2(a.base + t.base); a.vat = r2(a.vat + t.vat);
       continue;
     }
-    const bucket = slot.side === 'credit' ? res.credit : (slot.row === 'self' ? res.self : res.oblig);
-    for (const [rate, x] of Object.entries(t.byRate)) {
-      const b = bucket[rate] || (bucket[rate] = { base: 0, vat: 0 });
-      b.base = r2(b.base + x.base); b.vat = r2(b.vat + x.vat);
-    }
+    if (slot.row === 'import') { addTo(res.importCredit, t); continue; }
+    addTo(slot.side === 'credit' ? res.credit : (slot.row === 'self' ? res.self : res.oblig), t);
+    if (slot.side === 'oblig' && slot.row === 'main') for (const c of [901, 902, 903]) res.zero[c] = r2(res.zero[c] + t.zero[c]);
   }
   const sumVat = (b) => r2(Object.values(b).reduce((s, x) => s + x.vat, 0));
-  res.obligVat = r2(sumVat(res.oblig) + sumVat(res.self) + res.obligAdjust.vat);            // рядок 9
-  res.creditVat = r2(sumVat(res.credit) + res.creditAdjust.vat + res.carryIn);              // рядок 17
+  res.obligVat = r2(sumVat(res.oblig) + sumVat(res.self) + sumVat(res.nonres) + res.obligAdjust.vat);       // рядок 9
+  res.creditVat = r2(sumVat(res.credit) + sumVat(res.importCredit) + sumVat(res.nonresCredit)
+    + res.creditAdjust.vat + res.carryIn);                                                                   // рядок 17
   const diff = r2(res.obligVat - res.creditVat);
   res.toPay = diff > 0 ? diff : 0;                                                          // рядок 18
   res.negative = diff < 0 ? -diff : 0;                                                      // рядок 19

@@ -3,13 +3,13 @@
 // від 31.12.2015 № 1307. Таблична частина пишеться стовпцями.
 import { esc, num, todayDps } from './xmlDps';
 import { fileNameOf, wrapXml, baseHead, el, money, col, lines, dmy } from './payrollXml';
-import { vatLines, vatTotals, specOf, isNonpayerPn, isSelfPn, rkRegistrar, IPN_SELF } from './vatLogic';
+import { vatLines, vatTotals, specOf, isNonpayerPn, isSelfPn, isNonresPn, rkRegistrar, IPN_SELF, IPN_NONRESIDENT } from './vatLogic';
 
 const FORM_PN = { cDoc: 'F12', cDocSub: '010', cDocVer: 16 };
 const FORM_RK = { cDoc: 'F12', cDocSub: '012', cDocVer: 16 };
 
 // Код ставки (графа 8): 20, 7, 14; 902 — ставка 0 % на митній території
-export const rateCode = (rate) => (+rate === 0 ? 902 : +rate);
+export const rateCode = (rate, code) => (+rate === 0 ? (+code || 902) : +rate);
 // Код одиниці за Класифікатором системи позначень одиниць вимірювання та обліку
 const UNIT_CODES = { 'шт': '2009', 'кг': '0301', 'т': '0306', 'л': '0138', 'м': '0101', 'год': '0171', 'грн': '2454' };
 const unitCode = (name) => UNIT_CODES[String(name || '').toLowerCase().replace(/\.$/, '')] || '';
@@ -21,6 +21,13 @@ const qty6 = (n) => String(Math.round((+n || 0) * 1e6) / 1e6);
 const parties = (fop, v) => {
   const self = isSelfPn(v), nonpayer = isNonpayerPn(v);
   const sellerName = `ФОП ${fop?.fullName || ''}`.trim();
+  // Послуги від нерезидента: продавець — нерезидент з умовним ІПН, покупець — сам платник
+  if (isNonresPn(v)) return lines(
+    `<HNAMESEL>${esc(v.counterparty || '')}</HNAMESEL>`, `<HNAMEBUY>${esc(sellerName)}</HNAMEBUY>`,
+    `<HKSEL>${IPN_NONRESIDENT}</HKSEL>`,
+    `<HKBUY>${esc(fop?.vatCertificate || fop?.rnokpp || '')}</HKBUY>`,
+    el('HTINBUY', fop?.rnokpp), fop?.rnokpp ? '<HKB>2</HKB>' : '',
+  );
   const buyerTin = self || nonpayer ? '' : digits(v.counterpartyTin);
   return lines(
     `<HNAMESEL>${esc(sellerName)}</HNAMESEL>`,
@@ -52,7 +59,7 @@ export const pnXmlGaps = (fop, v) => {
   const miss = [];
   if (!fop?.rnokpp) miss.push('РНОКПП ФОП');
   if (!fop?.dpsRegion || !fop?.dpsDistrict || !fop?.dpsCode) miss.push('коди ДПС у профілі ФОП');
-  if (!isSelfPn(v) && !isNonpayerPn(v) && !/^\d{10,12}$/.test(v.buyerIpn || '')) miss.push('ІПН покупця');
+  if (!isSelfPn(v) && !isNonpayerPn(v) && !isNonresPn(v) && !/^\d{10,12}$/.test(v.buyerIpn || '')) miss.push('ІПН покупця');
   if (!/^[1-9]\d*(\/\d+)?$/.test(String(v.number || ''))) miss.push('номер (лише цифри, не з нуля)');
   return miss;
 };
@@ -69,11 +76,12 @@ export const buildPnXml = ({ fop, pn }) => {
     parties(fop, pn),
     money('R04G11', t.total), money('R03G11', t.vat),
     nz('R03G7', b(20).vat), nz('R03G109', b(7).vat), nz('R03G14', b(14).vat),
-    nz('R01G7', b(20).base), nz('R01G109', b(7).base), nz('R01G14', b(14).base), nz('R01G8', b(0).base),
+    nz('R01G7', b(20).base), nz('R01G109', b(7).base), nz('R01G14', b(14).base),
+    nz('R01G9', t.zero[901]), nz('R01G8', t.zero[902]), nz('R01G10', t.zero[903]),
     goodsCols(rows),
     col('RXXXXG5', rows, x => (x.qty ? qty6(x.qty) : '')),
     col('RXXXXG6', rows, x => (x.price ? num(x.price) : '')),
-    col('RXXXXG008', rows, x => rateCode(x.rate)),
+    col('RXXXXG008', rows, x => rateCode(x.rate, x.rateCode)),
     col('RXXXXG010', rows, x => x.base, num),
     col('RXXXXG11_10', rows, x => (x.rate ? (x.base * x.rate / 100).toFixed(6) : '')),
     `<HBOS>${esc(fop?.fullName || '')}</HBOS>`, `<HKBOS>${esc(fop?.rnokpp || '')}</HKBOS>`,
@@ -104,7 +112,7 @@ export const buildRkXml = ({ fop, rk }) => {
     col('RXXXXG6', rows, x => (x.qtyDelta && x.price ? num(x.price) : '')),
     col('RXXXXG7', rows, x => (x.priceDelta ? num(x.priceDelta) : '')),
     col('RXXXXG8', rows, x => (x.priceDelta && x.qtyForPrice ? qty6(x.qtyForPrice) : '')),
-    col('RXXXXG008', rows, x => rateCode(x.rate)),
+    col('RXXXXG008', rows, x => rateCode(x.rate, x.rateCode)),
     col('RXXXXG010', rows, x => x.base, num),
     col('RXXXXG11_10', rows, x => (x.rate ? (x.base * x.rate / 100).toFixed(6) : '')),
     `<HBOS>${esc(fop?.fullName || '')}</HBOS>`, `<HKBOS>${esc(fop?.rnokpp || '')}</HKBOS>`,

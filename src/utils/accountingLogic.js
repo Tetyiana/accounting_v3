@@ -1,4 +1,5 @@
 import { buildPartyIndex } from './settlements';
+import { ownTaxAccruals } from './ownTaxAccrual';
 
 export const MONEY_IN_TYPES = ['income', 'refund_in', 'non_income'];
 
@@ -139,7 +140,7 @@ const ACT_LABEL = { act: 'Акт', delivery_note: 'Накладна', return_act
 // docs = { acts, invoices, payments }. Без docs проводки будуються лише з операцій
 // журналу, а покупців і постачальників немає з чого визначити.
 export const buildLedgerEntries = (transactions = [], docs = {}) => {
-  const { acts = [], invoices = [], payments = [], payrollRecords = [], vatInvoices = [], employees = [] } = docs;
+  const { acts = [], invoices = [], payments = [], payrollRecords = [], vatInvoices = [], employees = [], tax = null } = docs;
   const idx = buildPartyIndex({ acts, invoices, payments });
   const entries = [];
 
@@ -221,6 +222,9 @@ export const buildLedgerEntries = (transactions = [], docs = {}) => {
     push('v', '66', '6413', r.vz, 'Утримано військовий збір');
     push('e', '84', '65', r.esv, 'Нараховано ЄСВ');
   });
+
+  // ── Податки ФОП за себе: нарахування за завершені квартали (docs.tax — група і ставки) ──
+  if (tax) ownTaxAccruals({ transactions, tax }).forEach(e => entries.push({ ...e, debit: acc(e.debit), credit: acc(e.credit) }));
 
   // ── Роздрібний акциз: 5 / 105 вартості підакцизних товарів у чеках за місяць ──
   const exciseByMonth = {};

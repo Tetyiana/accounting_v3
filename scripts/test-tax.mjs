@@ -12,6 +12,7 @@ import { buildEmployeeTimesheet, avgHeadcountMonth } from '../src/utils/timeshee
 import { buildLedgerEntries as BLE, corrAccountOf as CAO, taxSubaccount, accountMatches } from '../src/utils/accountingLogic.js';
 import { isOwnTaxPayment as IOTP } from '../src/utils/generalSystem.js';
 import * as V from '../src/utils/vatLogic.js';
+import { ownTaxAccruals } from '../src/utils/ownTaxAccrual.js';
 import { buildUnifiedPackage, calcDisabilityReport } from '../src/utils/payrollXml.js';
 import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
 import { buildSettlements, partyKey, effectivePayments } from '../src/utils/settlements.js';
@@ -465,5 +466,46 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.deepEqual(turn('643'), { dt: 1000, kt: 1000 });           // аванс закрито актом
   assert.deepEqual(turn('6414'), { dt: 1000, kt: 3000 });          // разом зобов'язань 2000 — як у акті
   assert.deepEqual(turn('6415'), { dt: 0, kt: 100 });              // 2100 × 5 / 105
+}
+// ── ПДВ: нульова ставка за кодами, звільнені, імпорт, послуги нерезидента ──
+{
+  const docs = [
+    { direction: 'outgoing', kind: 'pn', date: '2026-10-05', items: [
+      { name: 'Експорт', base: 1000, rate: 0, rateCode: 901 }, { name: 'Перевезення міжнародне', base: 2000, rate: 0, rateCode: 902 },
+      { name: 'Пільгова', base: 3000, rate: 0, rateCode: 903 }, { name: 'Звичайна', base: 4000, rate: 20 }] },
+    { direction: 'incoming', kind: 'pn', spec: 'import', date: '2026-10-08', number: 'UA100/2026/1', amount: 5000, rate: 20 },     // без реєстрації
+    { direction: 'outgoing', kind: 'pn', spec: 'nonresident', reasonType: '14', date: '2026-10-10', amount: 10000, rate: 20, registered: true, registrationDate: '2026-10-20' },
+    { direction: 'outgoing', kind: 'pn', spec: 'nonresident', reasonType: '14', date: '2026-10-12', amount: 1000, rate: 20 },      // не зареєстрована
+    { direction: 'outgoing', kind: 'pn', spec: 'nonresident', reasonType: '14', date: '2026-09-10', amount: 500, rate: 20, registered: true, registrationDate: '2026-10-30' }, // запізнилась
+  ];
+  const m = V.calcVatMonth(docs, '2026-10');
+  assert.deepEqual(m.zero, { 901: 1000, 902: 2000, 903: 3000 });
+  assert.equal(m.oblig[20].vat, 800); assert.equal(m.nonres[20].vat, 2200);            // рядок 6: обидві жовтневі
+  assert.equal(m.importCredit[20].vat, 1000); assert.equal(m.nonresCredit[20].vat, 2100); // рядок 13: зареєстровані (2000 + 100 з вересня)
+  assert.equal(m.obligVat, 3000); assert.equal(m.creditVat, 3100); assert.equal(m.negative, 100);
+  assert.equal(m.pending.length, 1);
+  assert.equal(V.calcVatMonth(docs, '2026-09').nonres[20].vat, 100); assert.equal(V.calcVatMonth(docs, '2026-09').nonresCredit[20].vat, 0);
+  assert.equal(V.rateId({ rate: 0, rateCode: 901 }), '901'); assert.equal(V.rateId({ rate: 0 }), '902'); assert.equal(V.rateId({ rate: 7 }), '7');
+}
+// ── Нарахування податків за себе на субрахунки 64 ──
+{
+  const tx = [
+    { type: 'income', date: '2026-07-10', amount: 100000 }, { type: 'income', date: '2026-08-10', amount: 50000 },
+    { type: 'refund_out', date: '2026-09-01', amount: 10000 }, { type: 'income', date: '2026-10-05', amount: 70000 },
+  ];
+  const sum = (list, code) => list.filter(e => e.credit === code).reduce((s, e) => s + e.amount, 0);
+  // 3 група 5 %: ІІІ квартал — дохід 140 000 → ЄП 7000, ВЗ 1 % = 1400, ЄСВ 3 × 1902,34; IV квартал ще не завершився
+  const g3 = ownTaxAccruals({ transactions: tx, tax: { taxGroup: '3_5' }, today: new Date(2026, 10, 12) });
+  assert.equal(sum(g3, '6411'), 7000); assert.equal(sum(g3, '6413'), 1400); assert.equal(sum(g3, '65'), 5707.02);
+  assert.ok(g3.every(e => e.date === '2026-09-30' && e.debit === '84'));
+  assert.equal(sum(ownTaxAccruals({ transactions: tx, tax: { taxGroup: '3_5', esvExempt: true }, today: new Date(2026, 10, 12) }), '65'), 0);
+  // після кінця року додається IV квартал: 70 000 × 5 %
+  assert.equal(sum(ownTaxAccruals({ transactions: tx, tax: { taxGroup: '3_5' }, today: new Date(2027, 0, 5) }), '6411'), 10500);
+  // 2 група, ставка 20 % МЗП: 1729,40 × 3; ВЗ 10 % МЗП: 864,70 × 3
+  const g2 = ownTaxAccruals({ transactions: tx, tax: { taxGroup: '2', epRatePercent: 20 }, today: new Date(2026, 10, 12) });
+  assert.equal(sum(g2, '6411'), 5188.2); assert.equal(sum(g2, '6413'), 2594.1);
+  // загальна система: чистий дохід 140 000 − 40 000 → ПДФО 18 000, ВЗ 5000
+  const gen = ownTaxAccruals({ transactions: [...tx, { type: 'expense', date: '2026-08-15', amount: 40000, counterparty: 'ТОВ Постач', description: 'товар' }], tax: { taxGroup: 'general' }, today: new Date(2026, 10, 12) });
+  assert.equal(sum(gen, '6412'), 18000); assert.equal(sum(gen, '6413'), 5000); assert.equal(sum(gen, '6411'), 0);
 }
 console.log('ALL OK');

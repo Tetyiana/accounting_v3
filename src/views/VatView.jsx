@@ -9,7 +9,7 @@ import { buildPnXml, buildRkXml, pnXmlGaps } from '../utils/vatXml';
 import { buildTaxInvoiceHtml } from '../utils/taxInvoicePrint';
 import Autocomplete from '../components/common/Autocomplete';
 import {
-  PN_SPECS, REASON_TYPES, RK_REASONS, VAT_RATE_LIST, specOf, vatLines, vatTotals, nextVatNumber,
+  PN_SPECS, REASON_TYPES, RK_REASONS, VAT_RATE_OPTIONS, rateId, isNonresPn, isImportDoc, specOf, vatLines, vatTotals, nextVatNumber,
   registrationDeadline, declarationSlot, calcVatChain, pendingPnEvents, draftPnForEvent,
   pendingRetailDays, draftRetailPn, buildRkItems, draftRk, rkRegistrar, isSelfPn, isNonpayerPn,
 } from '../utils/vatLogic';
@@ -62,6 +62,7 @@ const VatView = () => {
     const s = PN_SPECS.find(x => x.id === id) || PN_SPECS[0];
     setForm(p => ({
       ...p, spec: id, reasonType: s.reasonType || (s.reasons ? s.reasons[0] : ''), consolidatedCode: s.consolidatedCode || '',
+      ...(s.nonres ? { buyerIpn: activeFop?.vatCertificate || activeFop?.rnokpp || '' } : {}),
       counterparty: s.buyer || (s.self ? `ФОП ${activeFop?.fullName || ''}` : (PN_SPECS.some(x => x.buyer === p.counterparty) ? '' : p.counterparty)),
       buyerIpn: s.ipn || (/^[1-6]0{11}$/.test(p.buyerIpn) ? '' : p.buyerIpn),
       counterpartyTin: s.ipn ? '' : p.counterpartyTin,
@@ -81,12 +82,13 @@ const VatView = () => {
       if (vatInvoices.some(v => v.id !== f.id && v.direction === 'outgoing' && v.date === f.date && String(v.number).trim() === num)) {
         setErr(`Документ № ${num} за ${dots(f.date)} вже є: за однією датою двох ПН з однаковим номером бути не може`); return;
       }
-      if (!specOf(f).ipn && !/^\d{10,12}$/.test(f.buyerIpn || '')) { setErr('Вкажіть ІПН покупця — платника ПДВ (10 або 12 цифр). Якщо покупець не платник — оберіть вид «Неплатнику ПДВ»'); return; }
+      if (!specOf(f).ipn && !specOf(f).nonres && !/^\d{10,12}$/.test(f.buyerIpn || '')) { setErr('Вкажіть ІПН покупця — платника ПДВ (10 або 12 цифр). Якщо покупець не платник — оберіть вид «Неплатнику ПДВ»'); return; }
     }
-    if (f.registered && !f.registrationDate) { setErr('Вкажіть дату реєстрації в ЄРПН'); return; }
+    const registered = !!f.registered && !isImportDoc(f);
+    if (registered && !f.registrationDate) { setErr('Вкажіть дату реєстрації в ЄРПН'); return; }
     const doc = {
       ...f, number: num, items, amount: r2(items.reduce((s, x) => s + x.base, 0)), rate: items[0].rate,
-      registrationDate: f.registered ? f.registrationDate : null,
+      registered, registrationDate: registered ? f.registrationDate : null,
     };
     if (f.id) updateVatInvoice(f.id, doc); else addVatInvoice(doc);
     setForm(null); setErr('');
@@ -160,15 +162,24 @@ const VatView = () => {
       ['1.1', 'Постачання за основною ставкою 20 %', o[20].base, o[20].vat],
       ['1.2', 'Постачання за ставкою 7 %', o[7].base, o[7].vat],
       ['1.3', 'Постачання за ставкою 14 %', o[14].base, o[14].vat],
-      ['2, 3', 'Постачання за ставкою 0 %', o[0].base, 0],
+      ['2', 'Експорт, ставка 0 %', calc.zero[901], 0],
+      ['3', 'Інші операції за ставкою 0 %', calc.zero[902], 0],
       ['4.1', 'Зобов\'язання за пп. 198.5, 199.1 ПКУ, ставка 20 %', s[20].base, s[20].vat],
       ['4.2', 'Зобов\'язання за пп. 198.5, 199.1 ПКУ, ставка 7 %', s[7].base, s[7].vat],
       ['4.3', 'Зобов\'язання за пп. 198.5, 199.1 ПКУ, ставка 14 %', s[14].base, s[14].vat],
+      ['5', 'Операції, звільнені від оподаткування', calc.zero[903], 0],
+      ['6.1', 'Послуги від нерезидента, ставка 20 %', calc.nonres[20].base, calc.nonres[20].vat],
+      ['6.2', 'Послуги від нерезидента, ставка 7 %', calc.nonres[7].base, calc.nonres[7].vat],
       ['7', 'Коригування податкових зобов\'язань (розрахунки коригування)', calc.obligAdjust.base, calc.obligAdjust.vat],
       ['9', 'Усього податкових зобов\'язань', null, calc.obligVat, true],
       ['10.1', 'Придбання за основною ставкою 20 %', c[20].base, c[20].vat],
       ['10.2', 'Придбання за ставкою 7 %', c[7].base, c[7].vat],
       ['10.3', 'Придбання за ставкою 14 %', c[14].base, c[14].vat],
+      ['11.1', 'Імпорт, ставка 20 %', calc.importCredit[20].base, calc.importCredit[20].vat],
+      ['11.2', 'Імпорт, ставка 7 %', calc.importCredit[7].base, calc.importCredit[7].vat],
+      ['11.3', 'Імпорт, ставка 14 %', calc.importCredit[14].base, calc.importCredit[14].vat],
+      ['13.1', 'Послуги від нерезидента, ставка 20 %', calc.nonresCredit[20].base, calc.nonresCredit[20].vat],
+      ['13.2', 'Послуги від нерезидента, ставка 7 %', calc.nonresCredit[7].base, calc.nonresCredit[7].vat],
       ['14', 'Коригування податкового кредиту (розрахунки коригування)', calc.creditAdjust.base, calc.creditAdjust.vat],
       ['16.1', 'Від\'ємне значення попереднього періоду', null, calc.carryIn],
       ['17', 'Усього податкового кредиту', null, calc.creditVat, true],
@@ -194,6 +205,7 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
   };
 
   const status = (v) => {
+    if (isImportDoc(v)) return <span className="badge">митна декларація</span>;
     if (v.registered) return <span className="badge badge--success">ЄРПН {dots(v.registrationDate)}</span>;
     const dl = registrationDeadline(v);
     if (!dl) return null;
@@ -247,6 +259,13 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
             <div className="field"><label>Дата складання</label>
               <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value, number: p.direction === 'outgoing' && !p.id ? nextVatNumber(vatInvoices, e.target.value) : p.number }))} /></div>
             <div className="field"><label>Номер</label><input value={form.number} onChange={e => setF('number', e.target.value)} /></div>
+            {form.direction === 'incoming' && (
+              <div className="field" style={{ gridColumn: 'span 2' }}><label>Документ</label>
+                <select value={form.spec || ''} onChange={e => setF('spec', e.target.value)}>
+                  <option value="">Податкова накладна постачальника</option>
+                  <option value="import">Митна декларація (імпорт) — кредит без реєстрації в ЄРПН</option>
+                </select></div>
+            )}
             {form.direction === 'outgoing' && (
               <div className="field" style={{ gridColumn: 'span 2' }}><label>Вид накладної</label>
                 <select value={form.spec || ''} onChange={e => applySpec(e.target.value)}>
@@ -255,7 +274,7 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
             )}
           </div>
           <div className="form-row-4">
-            <div className="field" style={{ gridColumn: 'span 2' }}><label>{form.direction === 'outgoing' ? 'Покупець' : 'Постачальник'}</label>
+            <div className="field" style={{ gridColumn: 'span 2' }}><label>{isNonresPn(form) ? 'Нерезидент — найменування і країна' : form.direction === 'outgoing' ? 'Покупець' : 'Постачальник'}</label>
               <Autocomplete value={form.counterparty} options={clientOptions} placeholder="Назва"
                 onChange={v => setF('counterparty', v)}
                 onSelect={c => setForm(p => ({ ...p, counterparty: c.name, counterpartyTin: c.ipn || '', buyerIpn: c.vatIpn || (/^\d{10}$|^\d{12}$/.test(c.ipn || '') && c.isVatPayer ? c.ipn : p.buyerIpn) }))} /></div>
@@ -281,20 +300,22 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
                 <td><input className="table-input" value={it.uktzed || it.dkpp || ''} onChange={e => setItem(i, 'uktzed', e.target.value)} /></td>
                 <td><input className="table-input" type="number" value={it.qty} onChange={e => setItem(i, 'qty', e.target.value)} /></td>
                 <td><input className="table-input" type="number" step="0.01" value={it.price} onChange={e => setItem(i, 'price', e.target.value)} /></td>
-                <td><select className="table-input" value={it.rate} onChange={e => setItem(i, 'rate', +e.target.value)}>
-                  {VAT_RATE_LIST.map(r => <option key={r} value={r}>{r}%</option>)}</select></td>
+                <td><select className="table-input" value={rateId(it)} onChange={e => {
+                  const o = VAT_RATE_OPTIONS.find(x => x.id === e.target.value);
+                  setItem(i, 'rate', o.rate); setItem(i, 'rateCode', o.rate ? '' : +o.id);
+                }}>{VAT_RATE_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select></td>
                 <td style={{ textAlign: 'right' }}>{fmtMoney((+it.qty || 1) * (+it.price || 0))}</td>
                 <td><button className="btn-icon btn-icon--del" onClick={() => setForm(p => ({ ...p, items: p.items.length > 1 ? p.items.filter((_, j) => j !== i) : p.items }))}>✕</button></td>
               </tr>))}</tbody>
           </table>
           <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
             <button className="btn btn--ghost btn--sm" onClick={() => setForm(p => ({ ...p, items: [...p.items, EMPTY_ITEM()] }))}>+ Рядок</button>
-            <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" checked={!!form.registered} onChange={e => setF('registered', e.target.checked)} /> Зареєстрована в ЄРПН</label>
-            {form.registered && <input type="date" value={form.registrationDate || ''} onChange={e => setF('registrationDate', e.target.value)} style={{ width: 160 }} />}
+            {!isImportDoc(form) && <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={!!form.registered} onChange={e => setF('registered', e.target.checked)} /> Зареєстрована в ЄРПН</label>}
+            {form.registered && !isImportDoc(form) && <input type="date" value={form.registrationDate || ''} onChange={e => setF('registrationDate', e.target.value)} style={{ width: 160 }} />}
             <span style={{ marginLeft: 'auto' }}>Без ПДВ: <b>{fmtMoney(ft.base)}</b> · ПДВ: <b>{fmtMoney(ft.vat)}</b> · Разом: <b>{fmtMoney(ft.total)}</b></span>
           </div>
-          {form.direction === 'incoming' && !form.registered && (
+          {form.direction === 'incoming' && !form.registered && !isImportDoc(form) && (
             <p className="cell-muted" style={{ fontSize: '.82rem' }}>Податковий кредит за цією накладною буде враховано лише після реєстрації в ЄРПН (п. 198.6 ПКУ).</p>
           )}
           <div className="form-actions">
@@ -443,7 +464,7 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
           </div>
           <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 8 }}>
             Це робочий розрахунок рядків декларації, а не офіційна форма з додатками. Від'ємне значення попереднього місяця
-            переноситься автоматично. Імпорт, послуги від нерезидентів, бюджетне відшкодування і уточнюючі розрахунки не обробляються.
+            переноситься автоматично. Бюджетне відшкодування, уточнюючі розрахунки і пропорційний розподіл кредиту (п. 199.1 ПКУ) не обробляються.
           </p>
         </div>
       )}

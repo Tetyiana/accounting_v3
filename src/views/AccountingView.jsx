@@ -23,8 +23,14 @@ const AccountingView = () => {
   const [selAcc, setSelAcc] = useState('31');
 
   const allEntries = useMemo(
-    () => buildLedgerEntries(transactions, { acts, invoices, payments, payrollRecords, vatInvoices, employees }),
-    [transactions, acts, invoices, payments, payrollRecords, vatInvoices, employees]);
+    () => buildLedgerEntries(transactions, {
+      acts, invoices, payments, payrollRecords, vatInvoices, employees,
+      tax: activeFop ? {
+        taxGroup: activeFop.taxGroup, isVatPayer: activeFop.isVatPayer, epRatePercent: activeFop.epRatePercent,
+        esvExempt: activeFop.esvExempt, ep4Annual: activeFop.ep4Annual,
+      } : null,
+    }),
+    [transactions, acts, invoices, payments, payrollRecords, vatInvoices, employees, activeFop]);
   const entries = useMemo(() => allEntries
     .filter(e => (!dateStart || e.date >= dateStart) && (!dateEnd || e.date <= dateEnd)),
     [allEntries, dateStart, dateEnd]);
@@ -236,7 +242,7 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
               </table>
               <p className="cell-muted" style={{ fontSize: '.8rem', marginTop: 6 }}>
                 Нарахування є для ПДВ (з актів і ПН на передоплату), ПДФО і військового збору із зарплати, роздрібного акцизу.
-                Єдиний податок, ПДФО і військовий збір за себе в проводках не нараховуються — видно лише сплату.
+                Єдиний податок, ПДФО, військовий збір і ЄСВ за себе нараховуються на останній день кожного завершеного кварталу.
               </p>
             </div>
           )}
