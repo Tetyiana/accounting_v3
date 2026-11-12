@@ -6,6 +6,9 @@ import { openPrintWindow } from '../utils/printWindow';
 import { taxYear } from '../constants/taxYears';
 import { retailExcise } from '../utils/vatLogic';
 import { shiftWeekend } from '../utils/deadlines';
+import JSZip from 'jszip';
+import { encode1251 } from '../utils/xmlDps';
+import { buildExcisePackage } from '../utils/exciseXml';
 
 // Ліцензії на роздрібну торгівлю і роздрібний акциз.
 // Закон № 3817-IX: ліцензії безстрокові, плата — щокварталу рівними частинами
@@ -64,6 +67,23 @@ const ExciseView = () => {
     const base = r2(sold - returned + manual);
     return { sold: r2(sold), returned: r2(returned), manual, base, tax: retailExcise(Math.max(0, base)) };
   }, [transactions, period, data.exciseManual]);
+  // Розбивка за видами для додатка 5: вино і пиво вводяться, решта — лікеро-горілчана продукція
+  const split = (data.exciseSplit || {})[period] || {};
+  const grossByKind = {
+    wine: Math.min(+split.wine || 0, Math.max(0, excise.base)),
+    beer: Math.min(+split.beer || 0, Math.max(0, excise.base - (+split.wine || 0))),
+  };
+  grossByKind.spirits = r2(Math.max(0, excise.base) - grossByKind.wine - grossByKind.beer);
+  const setSplit = (k, v) => save({ exciseSplit: { ...(data.exciseSplit || {}), [period]: { ...split, [k]: v } } });
+  const downloadXmlPackage = async () => {
+    if (!activeFop?.katottg && !window.confirm('У профілі ФОП не вказано код КАТОТТГ — у декларації код території буде порожній. Продовжити?')) return;
+    const pkg = buildExcisePackage({ fop: activeFop, period, gross: grossByKind });
+    const zip = new JSZip();
+    pkg.files.forEach(f => zip.file(f.name, encode1251(f.xml)));
+    const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
+    const a = document.createElement('a'); a.href = url; a.download = `Декларація_акцизу_${period}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
   const [py, pm] = period.split('-').map(Number);
   const declDue = shiftWeekend(new Date(py, pm, 20));
   const payDue = new Date(declDue); payDue.setDate(payDue.getDate() + 10);
@@ -169,7 +189,12 @@ table{width:100%;border-collapse:collapse;margin:10px 0}td{border:1px solid #333
           <div className="field"><label>Продажі поза програмою (з ПДВ і акцизом), грн</label>
             <input type="number" min="0" step="0.01" value={(data.exciseManual || {})[period] ?? ''} placeholder="0" style={{ width: 220 }}
               onChange={e => save({ exciseManual: { ...(data.exciseManual || {}), [period]: e.target.value } })} /></div>
+          <div className="field"><label>з них виноробна продукція, грн</label>
+            <input type="number" min="0" step="0.01" value={split.wine ?? ''} placeholder="0" style={{ width: 150 }} onChange={e => setSplit('wine', e.target.value)} /></div>
+          <div className="field"><label>з них пиво, грн</label>
+            <input type="number" min="0" step="0.01" value={split.beer ?? ''} placeholder="0" style={{ width: 150 }} onChange={e => setSplit('beer', e.target.value)} /></div>
           <button className="btn btn--ghost" onClick={printSheet}>🖨 Друк розрахунку</button>
+          <button className="btn btn--primary" disabled={!(excise.base > 0)} onClick={downloadXmlPackage}>⇩ XML декларації (zip)</button>
         </div>
         <table className="data-table" style={{ marginTop: 10, maxWidth: 640 }}>
           <tbody>
@@ -181,7 +206,7 @@ table{width:100%;border-collapse:collapse;margin:10px 0}td{border:1px solid #333
         </table>
         <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 8 }}>
           Декларація акцизного податку за {period} — до {declDue.toLocaleDateString('uk-UA')}, сплата — до {payDue.toLocaleDateString('uk-UA')}.
-          Офіційну форму декларації програма не формує: суму перенесіть у декларацію в Електронному кабінеті.
+          XML — декларація F0209514 з додатком 5 для одного коду території (КАТОТТГ з профілю ФОП). У додатку вартість ділиться на лікеро-горілчану продукцію, вино і пиво: вкажіть частки вина й пива, решта піде як лікеро-горілчана.
         </p>
       </div>
     </div>

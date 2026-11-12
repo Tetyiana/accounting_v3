@@ -4,7 +4,9 @@ import { useFop } from '../context/FopContext';
 import { fmtMoney } from '../utils/documentLogic';
 import { effectivePayments } from '../utils/settlements';
 import { openPrintWindow } from '../utils/printWindow';
-import { downloadXml } from '../utils/xmlDps';
+import JSZip from 'jszip';
+import { downloadXml, encode1251 } from '../utils/xmlDps';
+import { buildVatDeclPackage } from '../utils/vatDeclXml';
 import { buildPnXml, buildRkXml, pnXmlGaps } from '../utils/vatXml';
 import { buildTaxInvoiceHtml } from '../utils/taxInvoicePrint';
 import Autocomplete from '../components/common/Autocomplete';
@@ -38,6 +40,7 @@ const VatView = () => {
   const [form, setForm] = useState(null);       // ПН у формі
   const [rkForm, setRkForm] = useState(null);   // { pn, date, reasonCode, changes: [{lineNo, qtyDelta, priceDelta}], registered, registrationDate }
   const [err, setErr] = useState('');
+  const [seaLimit, setSeaLimit] = useState('');   // сума за п. 200-1.3 ПКУ — для рядків 19.1–21
 
   const payEff = useMemo(() => effectivePayments({ invoices, payments, transactions, acts }), [invoices, payments, transactions, acts]);
   const calc = useMemo(() => calcVatChain(vatInvoices, period), [vatInvoices, period]);
@@ -202,6 +205,18 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
 <p style="font-size:10.5px">Робочий розрахунок для перенесення в декларацію в Електронному кабінеті, не офіційна форма.
 Строк подання — 20 календарних днів після звітного місяця, сплата — протягом 10 календарних днів після граничного строку подання.</p>
 </body></html>`, { fop: activeFop });
+  };
+
+  const declPkg = useMemo(() => buildVatDeclPackage({ fop: activeFop, calc, period, vatInvoices, seaLimit: seaLimit === '' ? null : seaLimit }),
+    [activeFop, calc, period, vatInvoices, seaLimit]);
+  const downloadDeclaration = async () => {
+    const miss = ['rnokpp', 'dpsRegion', 'dpsDistrict', 'dpsCode', 'dpsName', 'legalAddress'].filter(k => !activeFop?.[k]);
+    if (miss.length && !window.confirm('У профілі ФОП не заповнено реквізити для звітності ДПС — кабінет файл не прийме. Сформувати все одно?')) return;
+    const zip = new JSZip();
+    declPkg.files.forEach(f => zip.file(f.name, encode1251(f.xml)));
+    const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
+    const a = document.createElement('a'); a.href = url; a.download = `Декларація_ПДВ_${period}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
   const status = (v) => {
@@ -459,11 +474,21 @@ ${calc.pending.length ? `<p><b>Не враховано (${calc.pending.length}):
                   <td style={{ textAlign: 'right' }}>{base == null ? '' : fmtMoney(base)}</td><td style={{ textAlign: 'right' }}>{fmtMoney(vat)}</td></tr>))}</tbody>
             </table>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-            <button className="btn btn--primary" onClick={printDeclaration}>🖨 Друк розрахунку</button>
+          <div style={{ display: 'flex', gap: 10, marginTop: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <button className="btn btn--ghost" onClick={printDeclaration}>🖨 Друк розрахунку</button>
+            {calc.negative > 0 && (
+              <div className="field"><label>Сума за п. 200-1.3 ПКУ на дату подання (з СЕА ПДВ), грн</label>
+                <input type="number" min="0" value={seaLimit} onChange={e => setSeaLimit(e.target.value)} style={{ width: 220 }} /></div>
+            )}
+            <button className="btn btn--primary" onClick={downloadDeclaration}>⇩ XML декларації ({declPkg.files.length} файл{declPkg.files.length > 1 ? 'и' : ''}, zip)</button>
           </div>
+          {declPkg.warnings.map(w => <p key={w} className="form-error" style={{ marginTop: 6 }}>{w}</p>)}
           <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 8 }}>
-            Це робочий розрахунок рядків декларації, а не офіційна форма з додатками. Від'ємне значення попереднього місяця
+            У декларації суми в гривнях без копійок. Додаток 1 формується сам: видані накладні, не зареєстровані в ЄРПН,
+            і податковий кредит за постачальниками. Додатки 2, 4, 5 і таблицю 2.2 додатка 1 програма не формує.
+          </p>
+          <p className="cell-muted" style={{ fontSize: '.82rem', marginTop: 8 }}>
+            Таблиця — робочий розрахунок з копійками. Від'ємне значення попереднього місяця
             переноситься автоматично. Бюджетне відшкодування, уточнюючі розрахунки і пропорційний розподіл кредиту (п. 199.1 ПКУ) не обробляються.
           </p>
         </div>

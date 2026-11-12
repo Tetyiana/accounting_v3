@@ -372,3 +372,44 @@ export const draftRk = (pn, items, vatInvoices, date) => ({
 // Хто реєструє РК (п. 192.1 ПКУ): зменшення суми покупцю-платнику — покупець, решту — постачальник
 export const rkRegistrar = (rk) =>
   (vatTotals(rk).vat < 0 && !isNonpayerPn(rk) && !isSelfPn(rk)) ? 'buyer' : 'seller';
+
+// ─── Рядки декларації з ПДВ (форма F0200126, наказ Мінфіну від 28.01.2016 № 21) ────
+// Декларація заповнюється в гривнях без копійок: кожен показник округлюється окремо,
+// підсумкові рядки 9 і 17 рахуються із вже округлених.
+// seaLimit — сума, обчислена за п. 200-1.3 ПКУ на момент подання (потрібна лише при від'ємному значенні).
+export const vatDeclarationRows = (calc, { seaLimit = null } = {}) => {
+  const R = (n) => Math.round(+n || 0);
+  const rows = {};
+  const put = (k, v) => { if (R(v)) rows[k] = R(v); };
+  const ab = (k, x) => { put(`${k}GA`, x.base); put(`${k}GB`, x.vat); };
+  ab('R11', calc.oblig[20]); ab('R12', calc.oblig[7]); ab('R13', calc.oblig[14]);
+  put('R21GA', calc.zero[901]); put('R30GA', calc.zero[902]);
+  put('R50GA', calc.zero[903]); put('R51GA', calc.zero[903]);
+  ab('R41', calc.self[20]); ab('R42', calc.self[7]); ab('R43', calc.self[14]);
+  ab('R61', calc.nonres[20]); ab('R62', calc.nonres[7]);
+  ab('R71', calc.obligAdjust);
+  const sum = (keys) => keys.reduce((s, k) => s + (rows[k] || 0), 0);
+  rows.R90GB = sum(['R11GB', 'R12GB', 'R13GB', 'R41GB', 'R42GB', 'R43GB', 'R61GB', 'R62GB', 'R71GB']);
+  ab('R101', calc.credit[20]); ab('R102', calc.credit[7]); ab('R103', calc.credit[14]);
+  put('R104GA', calc.credit[0] ? calc.credit[0].base : 0);
+  ab('R111', calc.importCredit[20]); ab('R112', calc.importCredit[7]); ab('R113', calc.importCredit[14]);
+  ab('R131', calc.nonresCredit[20]); ab('R132', calc.nonresCredit[7]);
+  ab('R140', calc.creditAdjust);
+  put('R161GB', calc.carryIn); put('R160GB', calc.carryIn);
+  rows.R170GB = sum(['R101GB', 'R102GB', 'R103GB', 'R111GB', 'R112GB', 'R113GB', 'R131GB', 'R132GB', 'R140GB', 'R160GB']);
+  const diff = rows.R90GB - rows.R170GB;
+  if (diff > 0) rows.R180GB = diff;
+  if (diff < 0) {
+    const neg = -diff;
+    const limit = seaLimit === null || seaLimit === '' ? null : Math.max(0, R(seaLimit));
+    rows.R190GB = neg;
+    if (limit !== null) {
+      rows.R191G3 = limit;
+      rows.R191GB = Math.max(0, neg - limit);          // рядок 19.1
+      rows.R200GB = neg - rows.R191GB;                 // рядок 20
+      rows.R203GB = rows.R200GB;                       // рядок 20.3: усе — до кредиту наступного періоду
+      rows.R210GB = rows.R191GB + rows.R203GB;         // рядок 21 → рядок 16.1 наступного періоду
+    }
+  }
+  return rows;
+};

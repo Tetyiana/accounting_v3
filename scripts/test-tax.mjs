@@ -12,6 +12,7 @@ import { buildEmployeeTimesheet, avgHeadcountMonth } from '../src/utils/timeshee
 import { buildLedgerEntries as BLE, corrAccountOf as CAO, taxSubaccount, accountMatches } from '../src/utils/accountingLogic.js';
 import { isOwnTaxPayment as IOTP } from '../src/utils/generalSystem.js';
 import * as V from '../src/utils/vatLogic.js';
+import { calcExciseD5 } from '../src/utils/exciseXml.js';
 import { ownTaxAccruals } from '../src/utils/ownTaxAccrual.js';
 import { buildUnifiedPackage, calcDisabilityReport } from '../src/utils/payrollXml.js';
 import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
@@ -507,5 +508,20 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   // загальна система: чистий дохід 140 000 − 40 000 → ПДФО 18 000, ВЗ 5000
   const gen = ownTaxAccruals({ transactions: [...tx, { type: 'expense', date: '2026-08-15', amount: 40000, counterparty: 'ТОВ Постач', description: 'товар' }], tax: { taxGroup: 'general' }, today: new Date(2026, 10, 12) });
   assert.equal(sum(gen, '6412'), 18000); assert.equal(sum(gen, '6413'), 5000); assert.equal(sum(gen, '6411'), 0);
+}
+// ── Декларація з ПДВ у гривнях і акциз за додатком 5 ──
+{
+  const out = (o) => ({ direction: 'outgoing', kind: 'pn', rate: 20, ...o }), inc = (o) => ({ direction: 'incoming', kind: 'pn', rate: 20, ...o });
+  const docs = [out({ date: '2026-10-05', amount: 10000.4 }), out({ date: '2026-10-28', amount: 1000.6 }), out({ date: '2026-10-29', kind: 'rk', amount: 300 }),
+    inc({ date: '2026-10-10', amount: 4000, registered: true, registrationDate: '2026-10-30' }), inc({ date: '2026-10-08', spec: 'import', amount: 5000 })];
+  const r = V.vatDeclarationRows(V.calcVatChain(docs, '2026-10'));
+  assert.equal(r.R11GA, 11001); assert.equal(r.R11GB, 2200); assert.equal(r.R71GB, 60); assert.equal(r.R90GB, 2260);
+  assert.equal(r.R101GB, 800); assert.equal(r.R111GB, 1000); assert.equal(r.R170GB, 1800); assert.equal(r.R180GB, 460); assert.equal(r.R190GB, undefined);
+  const n = V.vatDeclarationRows(V.calcVatChain([docs[3]], '2026-10'), { seaLimit: 500 });
+  assert.equal(n.R190GB, 800); assert.equal(n.R191G3, 500); assert.equal(n.R191GB, 300); assert.equal(n.R200GB, 500); assert.equal(n.R203GB, 500); assert.equal(n.R210GB, 800);
+  assert.equal(V.vatDeclarationRows(V.calcVatChain([docs[3]], '2026-10')).R210GB, undefined);   // без суми з СЕА рядки 19.1–21 не заповнюються
+  assert.equal(V.vatDeclarationRows(V.calcVatChain([docs[3]], '2026-11')).R161GB, 800);
+  const e = calcExciseD5({ spirits: 4200, wine: 2100, beer: 1050 });
+  assert.equal(e.spirits.base, 4000); assert.equal(e.spirits.tax, 200); assert.equal(e.wine.tax, 100); assert.equal(e.beer.tax, 50); assert.equal(e.total, 350);
 }
 console.log('ALL OK');
