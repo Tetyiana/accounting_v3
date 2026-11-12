@@ -9,7 +9,9 @@ import { buildDeclarationHtml } from '../utils/dpsDeclarationPrint';
 import { checkIncomeLimit } from '../utils/incomeLimits';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
-import { buildEpG3Xml, buildEpG12Xml, downloadXml } from '../utils/xmlDps';
+import JSZip from 'jszip';
+import { downloadXml, encode1251 } from '../utils/xmlDps';
+import { buildEpDeclPackage, epDeclXmlGaps } from '../utils/epDeclXml';
 
 // Звітність ДПС: декларація платника єдиного податку.
 // 1-2 групи — річна; 3 група — квартальна наростаючим підсумком.
@@ -93,7 +95,6 @@ const DpsView = () => {
   const vzPrev        = round2(incomePrevPeriod * vzRate);
   const epToPay       = round2(epCumulative - epPrev);
   const vzToPay       = round2(vzCumulative - vzPrev);
-  const monthsInPeriod = period.months[1];
   const esvPeriod     = round2(ESV_AMOUNT * (isG3 ? 3 : 12)); // за останній квартал / за рік
 
   const declTitle = isG3
@@ -104,7 +105,7 @@ const DpsView = () => {
   // у редакції наказу від 31.01.2025 № 57, ідентифікатор форми F0103309).
   // Розрахунок рядків 01-29 — у src/utils/dpsDeclaration.js, верстка — у
   // src/utils/dpsDeclarationPrint.js. Довільної нумерації тут більше немає.
-  const handlePrint = () => {
+  const prepareDeclaration = () => {
     const employeesCount = (employees || []).filter(e => e.isActive !== false).length;
 
     // Перевищення граничного обсягу відносимо на місяць, у якому воно виникло
@@ -141,6 +142,10 @@ const DpsView = () => {
       prevRow23,
     });
 
+    // Групи 1, 2: авансові внески ЄП за квартали — ставка × місяці на спрощеній системі
+    const advanceByQuarter = isG3 ? [] : [0, 1, 2, 3].map(q =>
+      round2(epFixed * monthsOnSimplified.slice(q * 3, q * 3 + 3).filter(Boolean).length));
+
     // Фіксуємо показники: наступний період візьме звідси рядки 13 і 24
     saveDeclaration({
       year: selYear,
@@ -157,7 +162,11 @@ const DpsView = () => {
       rowsJson: decl.rows,
       source: 'auto',
     });
+    return { decl, employeesCount, advanceByQuarter };
+  };
 
+  const handlePrint = () => {
+    const { decl, employeesCount } = prepareDeclaration();
     const html = buildDeclarationHtml(decl, activeFop || {}, {
       year: selYear,
       employeesCount,
@@ -166,22 +175,22 @@ const DpsView = () => {
     openPrintWindow(html, { fop: activeFop });
   };
 
-  const handleXml = () => {
-    if (isG3) {
-      const { xml, name } = buildEpG3Xml({
-        fop: activeFop, year: selYear, quarter: selQ,
-        incomeCumulative, epCumulative, vzCumulative, epPrev, vzPrev,
-        esvMonths: '111'.slice(0, monthsInPeriod > 3 ? 3 : monthsInPeriod),
-      });
-      downloadXml(xml, name);
-    } else {
-      const { xml, name } = buildEpG12Xml({
-        fop: activeFop, year: selYear,
-        incomeYear: incomeCumulative,
-        epYear: round2(epFixed * 12), vzYear: round2(vzFixed * 12),
-      });
-      downloadXml(xml, name);
-    }
+  // XML за схемами ДПС: F0103309 (група 3) або F0103407 (групи 1, 2); у річній — з додатком 1
+  const handleXml = async () => {
+    const gaps = epDeclXmlGaps(activeFop);
+    if (gaps.length) { alert('Для XML заповніть у профілі ФОП: ' + gaps.join(', ') + '.'); return; }
+    const { decl, employeesCount, advanceByQuarter } = prepareDeclaration();
+    const pkg = buildEpDeclPackage({ fop: activeFop, year: selYear, decl, employeesCount, advanceByQuarter });
+    if (pkg.warnings.length) alert(pkg.warnings.join('\n'));
+    if (pkg.files.length === 1) { downloadXml(pkg.files[0].xml, pkg.files[0].name); return; }
+    const zip = new JSZip();
+    pkg.files.forEach(f => zip.file(f.name, encode1251(f.xml)));
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `ep_declaration_${selYear}.zip`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   if (group === '4') return <DpsGroup4 />;

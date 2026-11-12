@@ -15,6 +15,8 @@ import * as V from '../src/utils/vatLogic.js';
 import { calcExciseD5 } from '../src/utils/exciseXml.js';
 import { ownTaxAccruals } from '../src/utils/ownTaxAccrual.js';
 import { buildUnifiedPackage, calcDisabilityReport } from '../src/utils/payrollXml.js';
+import { buildDeclaration } from '../src/utils/dpsDeclaration.js';
+import { buildEpDeclPackage, parseKveds } from '../src/utils/epDeclXml.js';
 import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
 import { buildSettlements, partyKey, effectivePayments } from '../src/utils/settlements.js';
 import { buildWarehouseMovements, calcWarehouse } from '../src/utils/warehouseLogic.js';
@@ -523,5 +525,28 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(V.vatDeclarationRows(V.calcVatChain([docs[3]], '2026-11')).R161GB, 800);
   const e = calcExciseD5({ spirits: 4200, wine: 2100, beer: 1050 });
   assert.equal(e.spirits.base, 4000); assert.equal(e.spirits.tax, 200); assert.equal(e.wine.tax, 100); assert.equal(e.beer.tax, 50); assert.equal(e.total, 350);
+}
+// ── XML декларації єдиного податку за схемами F0103309 / F0103407 ──
+{
+  const fop = { rnokpp: '2812345678', fullName: 'Тест Тест', legalAddress: 'адреса', dpsRegion: 10, dpsDistrict: 13, dpsCode: 1013, dpsName: 'ДПС', mainKved: '49.41 Вантажний автомобільний транспорт', additionalKveds: '52.29 Інша допоміжна діяльність, 62.01' };
+  assert.deepEqual(parseKveds(fop.mainKved, fop.additionalKveds).map(k => k.code), ['49.41', '52.29', '62.01']);
+  assert.equal(parseKveds(fop.mainKved)[0].name, 'Вантажний автомобільний транспорт');
+  const base = { incomeByMonth: Array(12).fill(100000), minWage: 8647, monthsOnSimplified: Array(12).fill(true), esvBaseByMonth: Array(12).fill(8647) };
+  // 3 група, півріччя: один файл, період «півріччя» (тип 3, місяць 6), ЄП 5 % і ВЗ 1 % наростаючим
+  const h = buildEpDeclPackage({ fop, year: 2026, decl: buildDeclaration({ ...base, taxGroup: '3_5', periodId: 2, prevRow12: 15000, prevRow23: 3000 }) });
+  assert.equal(h.files.length, 1); assert.match(h.files[0].name, /F0103309100000000130620261013\.xml$/);
+  const x = h.files[0].xml;
+  assert.ok(x.includes('<HHY>1</HHY>') && x.includes('<R006G3>600000.00</R006G3>') && x.includes('<R011G3>30000.00</R011G3>'));
+  assert.ok(x.includes('<R013G3>15000.00</R013G3>') && x.includes('<R0141G3>15000.00</R0141G3>') && x.includes('<R014G3>15000.00</R014G3>'));
+  assert.ok(x.includes('<R023G3>6000.00</R023G3>') && x.includes('<R025G3>3000.00</R025G3>') && !x.includes('R021G3') && !x.includes('<HD1>'));
+  // 3 група, рік: декларація з додатком 1, ЄСВ 8647 × 22 % × 12
+  const y = buildEpDeclPackage({ fop, year: 2026, decl: buildDeclaration({ ...base, taxGroup: '3_5', periodId: 4 }) });
+  assert.equal(y.files.length, 2); assert.ok(y.files[0].xml.includes('<R021G3>22828.08</R021G3>') && y.files[0].xml.includes('<HD1>1</HD1>'));
+  assert.ok(y.files[1].name.includes('F0133109') && y.files[1].xml.includes('<R0912G4>1902.34</R0912G4>') && y.files[1].xml.includes('<R09G4>22828.08</R09G4>') && y.files[1].xml.includes('<R081G1>6</R081G1>'));
+  // 2 група: річна форма F0103407, авансові внески за квартали, ВЗ 864,70 × 12 з відмітками місяців
+  const g = buildEpDeclPackage({ fop, year: 2026, decl: buildDeclaration({ ...base, taxGroup: '2', periodId: 4 }), advanceByQuarter: [5188.2, 5188.2, 5188.2, 5188.2] });
+  const gx = g.files[0].xml;
+  assert.ok(g.files[0].name.includes('F0103407') && g.files[1].name.includes('F0134107'));
+  assert.ok(gx.includes('<R03G4>5188.20</R03G4>') && !gx.includes('<R02G1>') && gx.includes('<R003G3>1200000.00</R003G3>') && gx.includes('<R08G12>1</R08G12>') && gx.includes('<R022G3>10376.40</R022G3>'));
 }
 console.log('ALL OK');

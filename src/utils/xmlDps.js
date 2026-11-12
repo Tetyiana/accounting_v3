@@ -40,36 +40,6 @@ export const downloadXml = (xmlString, fileName) => {
   URL.revokeObjectURL(url);
 };
 
-// Стандартна назва файлу для кабінету:
-// <C_REG(2)><C_RAJ(2)><TIN(10)><C_DOC(3)><C_DOC_SUB(3)><C_DOC_VER(2)><C_DOC_STAN(1)><C_DOC_TYPE(2)><C_DOC_CNT(7)><PERIOD_TYPE(1)><PERIOD_MONTH(2)><PERIOD_YEAR(4)>.XML
-const fileName = (h) =>
-  `${pad(h.cReg, 2)}${pad(h.cRaj, 2)}${pad(h.tin, 10)}${h.cDoc}${h.cDocSub}${pad(h.cDocVer, 2)}` +
-  `1${pad(0, 2)}${pad(1, 7)}${h.periodType}${pad(h.periodMonth, 2)}${h.periodYear}.XML`;
-
-const head = (h) => `<DECLARHEAD>
-<TIN>${esc(h.tin)}</TIN>
-<C_DOC>${h.cDoc}</C_DOC>
-<C_DOC_SUB>${h.cDocSub}</C_DOC_SUB>
-<C_DOC_VER>${h.cDocVer}</C_DOC_VER>
-<C_DOC_TYPE>0</C_DOC_TYPE>
-<C_DOC_CNT>1</C_DOC_CNT>
-<C_REG>${pad(h.cReg, 2)}</C_REG>
-<C_RAJ>${pad(h.cRaj, 2)}</C_RAJ>
-<PERIOD_MONTH>${h.periodMonth}</PERIOD_MONTH>
-<PERIOD_TYPE>${h.periodType}</PERIOD_TYPE>
-<PERIOD_YEAR>${h.periodYear}</PERIOD_YEAR>
-<C_STI_ORIG>${pad(h.cSti || 0, 4)}</C_STI_ORIG>
-<C_DOC_STAN>1</C_DOC_STAN>
-<LINKED_DOCS xsi:nil="true"></LINKED_DOCS>
-<D_FILL>${h.dFill}</D_FILL>
-<SOFTWARE>Oblik FOP</SOFTWARE>
-</DECLARHEAD>`;
-
-const wrap = (h, schema, body) =>
-  `<?xml version="1.0" encoding="windows-1251"?>\n` +
-  `<DECLAR xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="${schema}">\n` +
-  head(h) + '\n<DECLARBODY>\n' + body + '\n</DECLARBODY>\n</DECLAR>';
-
 const today = () => {
   const d = new Date();
   return pad(d.getDate(), 2) + pad(d.getMonth() + 1, 2) + d.getFullYear();
@@ -82,66 +52,7 @@ const regRaj = (fop) => ({
   cSti: fop?.dpsCode || fop?.dps_code || 0,
 });
 
-// ─── Декларація платника ЄП, 3 група (квартальна) ────────────────
-// Форма F0103309 (за потреби поправити версію).
-const FORM_EP_G3 = { cDoc: 'F01', cDocSub: '033', cDocVer: 9, schema: 'F0103309.xsd' };
-
-export const buildEpG3Xml = ({ fop, year, quarter, incomeCumulative, epCumulative, vzCumulative, epPrev, vzPrev, esvMonths }) => {
-  const h = {
-    tin: fop?.rnokpp || '', ...regRaj(fop),
-    ...FORM_EP_G3,
-    periodMonth: quarter * 3, periodType: 2, periodYear: year, dFill: today(),
-  };
-  const rate = fop && (fop.taxGroup === '3_3_vat') ? 3 : 5;
-  const body = `<HZ>1</HZ>
-<HZN>1</HZN>
-<HNAME>${esc('ФОП ' + (fop?.fullName || ''))}</HNAME>
-<HTIN>${esc(fop?.rnokpp || '')}</HTIN>
-<HLOC>${esc(fop?.legalAddress || '')}</HLOC>
-<HKVED xsi:nil="true"></HKVED>
-<R001G1>${num(incomeCumulative)}</R001G1>
-<R006G1>${num(incomeCumulative)}</R006G1>
-<R008G1>${num(epCumulative)}</R008G1>
-<R010G1>${num(epPrev)}</R010G1>
-<R011G1>${num(epCumulative - epPrev)}</R011G1>
-<R012G1>${num(vzCumulative)}</R012G1>
-<R013G1>${num(vzPrev)}</R013G1>
-<R014G1>${num(vzCumulative - vzPrev)}</R014G1>
-<HFILL>${today()}</HFILL>
-<HBOS>${esc(fop?.fullName || '')}</HBOS>
-<HRATE>${rate}</HRATE>
-<HESVMONTHS>${esvMonths || ''}</HESVMONTHS>`;
-  return { xml: wrap(h, FORM_EP_G3.schema, body), name: fileName(h) };
-};
-
-// ─── Декларація платника ЄП, 1-2 групи (річна) ───────────────────
-// Ідентифікатори електронних форм (Реєстр електронних форм податкових документів ДПС):
-//   F0103407 — декларація платника ЄП, ФОП груп 1 і 2, річна
-//     Додаток 1 (ЄСВ) — F0134107, Додаток 2 (МПЗ) — F0134207
-//   F0103309 — декларація платника ЄП, ФОП групи 3, квартальна
-//     Додаток 1 (ЄСВ) — F0133109, Додаток 2 (МПЗ) — F0133209
-// Версія 06 діяла до наказу Мінфіну від 31.01.2025 № 57.
-const FORM_EP_G12 = { cDoc: 'F01', cDocSub: '034', cDocVer: 7, schema: 'F0103407.xsd' };
-
-export const buildEpG12Xml = ({ fop, year, incomeYear, epYear, vzYear }) => {
-  const h = {
-    tin: fop?.rnokpp || '', ...regRaj(fop),
-    ...FORM_EP_G12,
-    periodMonth: 12, periodType: 5, periodYear: year, dFill: today(),
-  };
-  const body = `<HZ>1</HZ>
-<HZN>1</HZN>
-<HNAME>${esc('ФОП ' + (fop?.fullName || ''))}</HNAME>
-<HTIN>${esc(fop?.rnokpp || '')}</HTIN>
-<HLOC>${esc(fop?.legalAddress || '')}</HLOC>
-<R001G1>${num(incomeYear)}</R001G1>
-<R008G1>${num(epYear)}</R008G1>
-<R012G1>${num(vzYear)}</R012G1>
-<HFILL>${today()}</HFILL>
-<HBOS>${esc(fop?.fullName || '')}</HBOS>`;
-  return { xml: wrap(h, FORM_EP_G12.schema, body), name: fileName(h) };
-};
-
+// Декларація платника єдиного податку (F0103309, F0103407 з додатком 1) — у utils/epDeclXml.js.
 // Податкова накладна і розрахунок коригування (F1201016, F1201216) — у utils/vatXml.js.
 // Зарплатна звітність (Податковий розрахунок F0500111 з додатками, звіт про внесок
 // F0500701, повідомлення про прийняття F3001005) — у utils/payrollXml.js.

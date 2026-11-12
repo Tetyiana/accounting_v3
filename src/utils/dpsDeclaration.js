@@ -149,6 +149,7 @@ export function buildDeclaration({
     vzMonthMarks,
     vzMonthsCount,
     meta: {
+      taxGroup,
       formId: DECL_FORM_ID,
       order: DECL_ORDER,
       // Гр. 1, 2 звітують раз на рік, гр. 3 — щокварталу
