@@ -8,9 +8,11 @@ import {
 import { taxYear } from '../constants/taxYears';
 
 // ─── Базові розрахунки ──────────────────────────────────────────────
-// isFullMonth = true якщо не було відпустки за вл. рах., лікарняних тощо.
-// Якщо повний місяць і нарахована < мінімалки → ЄСВ від мінімалки (ст.7 ЗУ про ЄСВ).
-// Якщо неповний місяць (факт. відпрацювання) → ЄСВ від реально нарахованого.
+// isFullMonth = true, якщо працівник перебував у трудових відносинах увесь місяць
+// (не прийнятий і не звільнений посеред місяця). Тоді за основним місцем роботи
+// при базі, меншій за МЗП, ЄСВ рахують від МЗП (ч. 5 ст. 8 Закону № 2464-VI) —
+// у тому числі коли частину місяця працівник хворів, був у відпустці чи у
+// відпустці без збереження. Якщо прийнятий/звільнений посеред місяця — від фактичної бази.
 // opts.hasDisability — працівник з інвалідністю (підтверджена витягом/довідкою):
 //   ставка ЄСВ 8,41% (ч. 13 ст. 8 ЗУ № 2464) і вимога мінімального страхового
 //   внеску до нього НЕ застосовується — ЄСВ від фактично нарахованого.
@@ -97,18 +99,67 @@ export const calcLeaveDaily = (monthlyPayments = [], periods = []) => {
 export const calcLeaveAmount = (dailyRate, days) => round2((+dailyRate || 0) * (+days || 0));
 
 // ─── Лікарняний ─────────────────────────────────────────────────────
-// Перші 5 к.д. — за рахунок роботодавця.
-// ЗУ "Про загальнообов'язкове державне соціальне страхування" ст.24.
-export const calcSickPay = ({ dailyRate, totalDays, payPercent }) => {
-  const employerDays  = Math.min(+totalDays || 0, 5);
-  const fssDays       = Math.max(0, (+totalDays || 0) - 5);
-  const employerAmount = round2((+dailyRate || 0) * employerDays * (+payPercent || 100) / 100);
+// Закон «Про загальнообов'язкове державне соціальне страхування» від 23.09.1999
+// № 1105-XIV: перші 5 к.д. — коштом роботодавця, з 6-го дня — коштом ПФУ.
+// Відсоток залежить від страхового стажу: до 3 років — 50 %, 3–5 — 60 %,
+// 5–8 — 70 %, понад 8 років і пільгові категорії — 100 %.
+export const SICK_STAZH_PERCENTS = [
+  { id: 50,  label: 'стаж до 3 років — 50 %' },
+  { id: 60,  label: 'стаж 3–5 років — 60 %' },
+  { id: 70,  label: 'стаж 5–8 років — 70 %' },
+  { id: 100, label: 'стаж понад 8 років або пільгова категорія — 100 %' },
+];
+// Середня кількість календарних днів місяця для меж лікарняних (Порядок № 1266)
+export const SICK_MONTH_DAYS = 30.44;
+
+// Середньоденна зарплата для лікарняних (Порядок, затв. постановою КМУ від 26.09.2001
+// № 1266, зі змінами за постановою № 533, що діють для страхових випадків з 01.05.2026):
+// заробіток за 12 календарних місяців перед місяцем настання страхового випадку,
+// поділений на календарні дні цих місяців. Місяць виключається, лише якщо працівник
+// не працював у ньому жодного робочого дня з поважних причин (тут — місяці без заробітку).
+// history: [{ period: 'РРРР-ММ', gross }] — нарахування до місяця хвороби.
+// lowStazh — страховий стаж за останні 12 місяців менший за 6 місяців:
+//   середня обмежується розрахунком з МЗП.
+export const calcSickDaily = ({ history = [], salary = 0, period, lowStazh = false }) => {
+  const yp = taxYear(+String(period || '').slice(0, 4) || new Date().getFullYear());
+  const months = history.filter(h => (+h.gross || 0) > 0).slice(0, 12);
+  let daily;
+  if (months.length) {
+    const total = months.reduce((s, h) => s + (+h.gross || 0), 0);
+    const days = months.reduce((s, h) => {
+      const m = /^(\d{4})-(\d{2})$/.exec(h.period || '');
+      return s + (m ? new Date(+m[1], +m[2], 0).getDate() : SICK_MONTH_DAYS);
+    }, 0);
+    daily = days > 0 ? total / days : 0;
+  } else {
+    // заробітку в розрахунковому періоді немає — з окладу
+    daily = (+salary || 0) / SICK_MONTH_DAYS;
+  }
+  const maxDaily = yp.esvMaxBase / SICK_MONTH_DAYS;   // не більше максимальної бази ЄСВ
+  const minDaily = yp.minWage / SICK_MONTH_DAYS;      // розрахунок з МЗП
+  let limited = '';
+  if (daily > maxDaily) { daily = maxDaily; limited = 'max'; }
+  if (lowStazh && daily > minDaily) { daily = minDaily; limited = 'lowStazh'; }
+  if (!lowStazh && daily < minDaily) { daily = minDaily; limited = 'min'; }
+  return { daily: round2(daily), limited, months: months.length };
+};
+
+// totalDays — календарні дні хвороби в місяці; daysBefore — скільки днів цього ж
+// страхового випадку вже оплачено в попередньому місяці (для перехідних лікарняних);
+// pfuFromFirstDay — догляд за хворою дитиною тощо: коштом ПФУ з першого дня.
+export const calcSickPay = ({ dailyRate, totalDays, payPercent, daysBefore = 0, pfuFromFirstDay = false }) => {
+  const total = Math.max(0, +totalDays || 0);
+  const employerLeft = pfuFromFirstDay ? 0 : Math.max(0, 5 - (+daysBefore || 0));
+  const employerDays = Math.min(total, employerLeft);
+  const fssDays      = total - employerDays;
+  const perDay       = round2((+dailyRate || 0) * (+payPercent || 100) / 100);
   return {
     employerDays,
     fssDays,
-    employerAmount,
-    // Суму від ФСС рахуємо але зарплата нараховується тільки від роботодавця
-    totalDays: +totalDays || 0,
+    perDay,
+    employerAmount: round2(perDay * employerDays),
+    pfuAmount:      round2(perDay * fssDays),
+    totalDays: total,
   };
 };
 

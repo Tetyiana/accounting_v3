@@ -7,6 +7,8 @@ import { fmtMoney } from '../../utils/documentLogic';
 const ORDER_TYPES = [
   { id: 'hire',     label: 'Про прийняття на роботу' },
   { id: 'transfer', label: 'Про переведення (посада/оклад)' },
+  { id: 'leave',    label: 'Про надання щорічної відпустки' },
+  { id: 'unpaid_leave', label: 'Про надання відпустки без збереження зарплати' },
   { id: 'bonus',    label: 'Про преміювання' },
   { id: 'dismiss',  label: 'Про звільнення' },
 ];
@@ -26,6 +28,18 @@ const buildOrderHtml = (order, emp, fop) => {
 <p><b>${emp?.fullName || ''}</b> з посади <b>${d.fromPosition || '—'}</b>
 (оклад ${fmtMoney(d.fromSalary || 0)} грн) на посаду <b>${d.position || '—'}</b>
 з окладом <b>${fmtMoney(d.salary || 0)} грн</b> з ${order.effectiveDate || order.orderDate}.</p>
+<p>Підстава: ${d.basis || 'заява працівника'}.</p>`;
+  if (order.orderType === 'leave') body = `
+<p>НАДАТИ:</p>
+<p><b>${emp?.fullName || ''}</b> (${emp?.position || '—'}) щорічну основну відпустку
+тривалістю <b>${d.days || '—'}</b> календарних днів з <b>${d.startDate || '—'}</b> по <b>${d.endDate || '—'}</b>
+${d.workYear ? `за робочий рік ${d.workYear}` : ''}.</p>
+<p>Підстава: ${d.basis || 'заява працівника, графік відпусток'}.</p>`;
+  if (order.orderType === 'unpaid_leave') body = `
+<p>НАДАТИ:</p>
+<p><b>${emp?.fullName || ''}</b> (${emp?.position || '—'}) відпустку без збереження заробітної плати
+тривалістю <b>${d.days || '—'}</b> календарних днів з <b>${d.startDate || '—'}</b> по <b>${d.endDate || '—'}</b>
+(${d.article || 'ст. 26 Закону України «Про відпустки»'}).</p>
 <p>Підстава: ${d.basis || 'заява працівника'}.</p>`;
   if (order.orderType === 'bonus') body = `
 <p>ПРЕМІЮВАТИ:</p>
@@ -59,13 +73,14 @@ ${body}
 };
 
 const HrOrders = ({ employees }) => {
-  const { hrOrders, addHrOrder, deleteHrOrder, updateEmployee } = useData();
+  const { hrOrders, addHrOrder, deleteHrOrder, updateEmployee, addLeaveRecord } = useData();
   const { activeFop } = useFop();
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({
     employeeId: '', orderType: 'transfer', orderNumber: '',
     orderDate: new Date().toISOString().slice(0, 10), effectiveDate: '',
     position: '', salary: '', amount: '', period: '', basis: '',
+    startDate: '', days: '', workYear: '',
   });
   const set = e => setForm(p => ({ ...p, [e.target.name]: e.target.value }));
 
@@ -78,8 +93,19 @@ const HrOrders = ({ employees }) => {
   const handleSave = () => {
     const emp = employees.find(e => e.id === form.employeeId);
     if (!emp) { alert('Оберіть працівника'); return; }
+    const isLeave = form.orderType === 'leave' || form.orderType === 'unpaid_leave';
+    let endDate = '';
+    if (isLeave) {
+      if (!form.startDate || !(+form.days > 0)) { alert('Вкажіть дату початку і кількість календарних днів відпустки'); return; }
+      // Святкові дні тривалість не подовжують: у воєнний час ст. 73 КЗпП не застосовується
+      // (ч. 6 ст. 6 Закону № 2136-IX).
+      const [y, m, d0] = form.startDate.split('-').map(Number);
+      const e = new Date(y, m - 1, d0 + Math.round(+form.days) - 1);
+      endDate = `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, '0')}-${String(e.getDate()).padStart(2, '0')}`;
+    }
     const details = {
       basis: form.basis,
+      ...(isLeave && { startDate: form.startDate, endDate, days: Math.round(+form.days), workYear: form.workYear }),
       ...(form.orderType === 'hire'     && { position: form.position || emp.position, salary: +form.salary || +emp.salary }),
       ...(form.orderType === 'transfer' && { fromPosition: emp.position, fromSalary: +emp.salary, position: form.position, salary: +form.salary }),
       ...(form.orderType === 'bonus'    && { amount: +form.amount, period: form.period }),
@@ -87,10 +113,27 @@ const HrOrders = ({ employees }) => {
     const order = addHrOrder({
       employeeId: emp.id, orderType: form.orderType,
       orderNumber: form.orderNumber || nextNumber,
-      orderDate: form.orderDate, effectiveDate: form.effectiveDate || form.orderDate,
+      orderDate: form.orderDate,
+      effectiveDate: isLeave ? form.startDate : (form.effectiveDate || form.orderDate),
       details,
     });
-    if (form.orderType === 'transfer') updateEmployee(emp.id, { position: form.position, salary: +form.salary });
+    // Відпустка з наказу одразу потрапляє в облік відпусток — звідти її беруть табель і нарахування
+    if (isLeave) {
+      addLeaveRecord({
+        type: form.orderType === 'leave' ? 'annual' : 'unpaid', employeeId: emp.id,
+        startDate: form.startDate, endDate, days: Math.round(+form.days),
+        notes: `Наказ № ${order.orderNumber}`,
+      });
+    }
+    if (form.orderType === 'transfer') {
+      const eff = form.effectiveDate || form.orderDate;
+      // Підвищення окладу: місяць підвищення стає базовим для індексації (п. 5 Порядку № 1078)
+      const raised = +form.salary > +emp.salary;
+      updateEmployee(emp.id, {
+        position: form.position || emp.position, salary: +form.salary || +emp.salary,
+        ...(raised && { indexBaseMonth: eff.slice(0, 7) }),
+      });
+    }
     if (form.orderType === 'dismiss')  updateEmployee(emp.id, { isActive: false, fireDate: form.effectiveDate || form.orderDate });
     openPrintWindow(buildOrderHtml(order, emp, activeFop), { fop: activeFop });
     setShow(false);
@@ -121,8 +164,19 @@ const HrOrders = ({ employees }) => {
               <input type="date" name="orderDate" value={form.orderDate} onChange={set} /></div>
           </div>
           <div className="form-row-4">
-            <div className="field"><label>Дата набуття чинності</label>
-              <input type="date" name="effectiveDate" value={form.effectiveDate} onChange={set} /></div>
+            {(form.orderType === 'leave' || form.orderType === 'unpaid_leave') ? (<>
+              <div className="field"><label>Початок відпустки</label>
+                <input type="date" name="startDate" value={form.startDate} onChange={set} /></div>
+              <div className="field"><label>Календарних днів</label>
+                <input type="number" name="days" value={form.days} onChange={set} min="1" /></div>
+              {form.orderType === 'leave' && (
+                <div className="field"><label>За робочий рік</label>
+                  <input name="workYear" value={form.workYear} onChange={set} placeholder="10.01.2026 – 09.01.2027" /></div>
+              )}
+            </>) : (
+              <div className="field"><label>Дата набуття чинності</label>
+                <input type="date" name="effectiveDate" value={form.effectiveDate} onChange={set} /></div>
+            )}
             {(form.orderType === 'hire' || form.orderType === 'transfer') && (<>
               <div className="field"><label>Нова посада</label>
                 <input name="position" value={form.position} onChange={set} /></div>

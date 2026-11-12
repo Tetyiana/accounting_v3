@@ -6,7 +6,10 @@ import { taxYear, epFixedMonthly, taxYearWarning } from '../src/constants/taxYea
 import { incomeLimitFor, checkIncomeLimit } from '../src/utils/incomeLimits.js';
 import { buildDeadlines } from '../src/utils/deadlines.js';
 import { calcGeneralYear, isOwnTaxPayment } from '../src/utils/generalSystem.js';
-import { calcNetFromGross, calcLeaveDaily } from '../src/utils/payrollLogic.js';
+import { calcNetFromGross, calcLeaveDaily, calcSickDaily, calcSickPay } from '../src/utils/payrollLogic.js';
+import { indexationCoef, calcIndexation } from '../src/utils/indexation.js';
+import { buildEmployeeTimesheet, avgHeadcountMonth } from '../src/utils/timesheet.js';
+import { buildUnifiedPackage, calcDisabilityReport } from '../src/utils/payrollXml.js';
 import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
 import { buildSettlements, partyKey, effectivePayments } from '../src/utils/settlements.js';
 import { buildWarehouseMovements, calcWarehouse } from '../src/utils/warehouseLogic.js';
@@ -240,5 +243,84 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   ]);
   assert.deepEqual(b, { bank: 10, cash: 120 });
   assert.equal(calcLeaveDaily([31000, 28000], ['2026-01', '2026-02']), 1000);   // 59000 / (31 + 28)
+}
+// ── Зарплата: індексація, лікарняні, табель, звітність ──
+{
+  // Опубліковані коефіцієнти 2026 р.: база січень — 4,2 % з червня, 7,6 % з листопада;
+  // база лютий — 3,1 % і 6,5 %; березень — 4,8 %, квітень — 3,3 % з листопада
+  assert.equal(indexationCoef('2026-01', '2026-05').coefPercent, 0);
+  assert.equal(indexationCoef('2026-01', '2026-06').coefPercent, 4.2);
+  assert.equal(indexationCoef('2026-01', '2026-10').coefPercent, 4.2);
+  assert.equal(indexationCoef('2026-01', '2026-11').coefPercent, 7.6);
+  assert.equal(indexationCoef('2026-02', '2026-10').coefPercent, 3.1);
+  assert.equal(indexationCoef('2026-02', '2026-11').coefPercent, 6.5);
+  assert.equal(indexationCoef('2026-03', '2026-11').coefPercent, 4.8);
+  assert.equal(indexationCoef('2026-04', '2026-11').coefPercent, 3.3);
+  assert.equal(indexationCoef('2026-05', '2026-11').coefPercent, 0);
+  assert.equal(indexationCoef('2024-06', '2026-11').coefPercent, 7.6);   // стара база → січень 2026
+  assert.equal(indexationCoef('', '2026-11').base, '2026-01');
+  assert.equal(calcIndexation({ baseMonth: '2026-01', period: '2026-11', income: 20000 }).amount, 252.93);
+  assert.equal(calcIndexation({ baseMonth: '2026-01', period: '2026-09', income: 20000 }).amount, 139.78);
+  assert.equal(calcIndexation({ baseMonth: '2026-03', period: '2026-11', income: 20000 }).amount, 159.74);
+  assert.equal(calcIndexation({ baseMonth: '2026-01', period: '2026-11', income: 20000, workShare: 0.5 }).amount, 126.46);
+  assert.ok(indexationCoef('2026-01', '2027-03').missing.length > 0);
+
+  // Лікарняні: 240 000 за 12 міс. (365 днів) = 657,53; стаж 4 роки — 60 % = 394,52
+  const hist = ['2025-08','2025-09','2025-10','2025-11','2025-12','2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07']
+    .map(p => ({ period: p, gross: 20000 }));
+  const sd = calcSickDaily({ history: hist, period: '2026-08' });
+  assert.equal(sd.daily, 657.53);
+  const sp = calcSickPay({ dailyRate: sd.daily, totalDays: 10, payPercent: 60 });
+  assert.equal(sp.perDay, 394.52); assert.equal(sp.employerDays, 5); assert.equal(sp.fssDays, 5);
+  assert.equal(sp.employerAmount, 1972.6); assert.equal(sp.pfuAmount, 1972.6);
+  assert.equal(calcSickPay({ dailyRate: 100, totalDays: 4, payPercent: 100, daysBefore: 3 }).employerDays, 2);
+  // обмеження з МЗП при стажі до 6 міс.: 8647 / 30,44 = 284,07
+  assert.equal(calcSickDaily({ history: hist, period: '2026-08', lowStazh: true }).daily, 284.07);
+  assert.equal(calcSickDaily({ history: [], salary: 30440, period: '2026-08' }).daily, 1000);
+  assert.equal(calcSickDaily({ history: [{ period: '2026-07', gross: 3100 }], period: '2026-08' }).daily, 284.07); // не менше МЗП
+
+  // Табель: вересень 2026 — 22 робочі дні; відпустка 14–27.09 (14 к.д., 10 робочих)
+  const emp = { id: 'e1', fullName: 'А Б В', hireDate: '2025-01-10' };
+  const t = buildEmployeeTimesheet(emp, '2026-09', [{ employeeId: 'e1', type: 'annual', startDate: '2026-09-14', days: 14 }]);
+  assert.equal(t.normDays, 22); assert.equal(t.annual, 14); assert.equal(t.workDays, 12); assert.equal(t.hours, 96);
+  assert.ok(t.fullMonthEmployed);
+  const t2 = buildEmployeeTimesheet({ id: 'e2', hireDate: '2026-09-16' }, '2026-09', []);
+  assert.equal(t2.workDays, 11); assert.ok(!t2.fullMonthEmployed);
+  assert.equal(avgHeadcountMonth([emp, { id: 'e2', hireDate: '2026-09-16' }], '2026-09'), 1.5);
+
+  // ЄСВ: у трудових відносинах увесь місяць, нараховано менше МЗП → від МЗП
+  assert.equal(calcNetFromGross(5000, [], true, { period: '2026-09' }).esv, 1902.34);
+  assert.equal(calcNetFromGross(5000, [], false, { period: '2026-09' }).esv, 1100);
+
+  // Податковий розрахунок: різниця до МЗП окремим рядком, 8,41 % для особи з інвалідністю
+  const fop = { fullName: 'ФОП', rnokpp: '1234567890' };
+  const emps = [emp, { id: 'e3', fullName: 'Г Д Е', hireDate: '2025-01-01', hasDisability: true, gender: 'Ч' }];
+  const pkg = buildUnifiedPackage({
+    fop, year: 2026, quarter: 3, employees: emps,
+    records: [
+      { employeeId: 'e1', period: '2026-09', status: 'paid', totalGross: 7000, pdfo: 1260, vz: 350, sickPayAmount: 1500, sickPfuAmount: 900, sickDays: 8 },
+      { employeeId: 'e3', period: '2026-09', status: 'approved', totalGross: 6000, pdfo: 1080, vz: 300 },
+      { employeeId: 'e1', period: '2026-08', status: 'draft', totalGross: 20000 },
+    ],
+  });
+  const m9 = pkg.months[2].calc;
+  assert.equal(m9.r1, 13000); assert.equal(m9.r13, 1500); assert.equal(m9.r14, 900);
+  assert.equal(m9.r21, 7000); assert.equal(m9.r22, 6000); assert.equal(m9.r23, 1647);
+  assert.equal(m9.r31, 1540); assert.equal(m9.r32, 504.6); assert.equal(m9.r33, 362.34);
+  assert.equal(m9.r3, 2406.94); assert.equal(m9.r321, 1320);
+  assert.equal(pkg.months[1].recs.length, 0);                 // чернетка у звіт не потрапляє
+  assert.equal(pkg.files.length, 3);                          // основна + ФІЗ-Д1 + ФІЗ-4ДФ за вересень
+  assert.ok(pkg.files[0].xml.includes('<R01033G5>362.34</R01033G5>'));
+  assert.ok(pkg.warnings.some(w => w.includes('стать')));
+
+  // Внесок: 12 працівників, норматив 1, немає працівників з інвалідністю,
+  // середня зарплата 10 000 → 40 % × 10 000 × 3 × 1 × 50 % = 6 000
+  const many = Array.from({ length: 12 }, (_, i) => ({ id: 'm' + i, hireDate: '2025-01-01' }));
+  const recs = many.flatMap(e => ['2026-07', '2026-08', '2026-09'].map(p => ({ employeeId: e.id, period: p, status: 'paid', totalGross: 10000 })));
+  const dr = calcDisabilityReport({ employees: many, records: recs, year: 2026, quarter: 3 });
+  assert.equal(dr.headcount, 12); assert.equal(dr.norm, 1); assert.equal(dr.gap, 1);
+  assert.equal(dr.avgWage, 10000); assert.equal(dr.contribution, 6000); assert.ok(dr.isPayer);
+  assert.equal(calcDisabilityReport({ employees: many.slice(0, 5), records: recs, year: 2026, quarter: 3 }).contribution, 0);
+  assert.equal(calcDisabilityReport({ employees: many, records: recs, year: 2026, quarter: 3, overrides: { withDisability: 1 } }).contribution, 0);
 }
 console.log('ALL OK');

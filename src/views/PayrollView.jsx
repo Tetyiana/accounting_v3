@@ -10,14 +10,18 @@ import {
 import {
   calcNetFromGross, calcGrossFromNet,
   calcLeaveDaily, calcLeaveAmount,
-  calcSickPay, calcTerminationCompensation,
+  calcSickPay, calcSickDaily, SICK_STAZH_PERCENTS, calcTerminationCompensation,
   calcUnpaidLeaveDeduction, calcWorkingDaysInMonth, calcWorkingDaysInRange,
   buildPayrollSummary, calcLeaveAccrualForMonth, round2,
 } from '../utils/payrollLogic';
-import { generatePayrollXml, downloadXml } from '../utils/payrollXml';
+import { calcIndexation } from '../utils/indexation';
+import { buildEmployeeTimesheet } from '../utils/timesheet';
+import { buildPayrollSheetHtml, buildSickCalcHtml } from '../utils/payrollDocs';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
 import HrOrders from '../components/Payroll/HrOrders';
+import Timesheet from '../components/Payroll/Timesheet';
+import PayrollReports from '../components/Payroll/PayrollReports';
 
 // ─── Форма картки працівника ─────────────────────────────────────────
 const EmployeeForm = ({ initial, onSave, onCancel }) => {
@@ -90,6 +94,42 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
           <input type="number" name="leaveUsed" value={form.leaveUsed || 0} onChange={set} min="0" step="0.5" />
         </div>
       </div>
+      <div className="form-row-4">
+        <div className="field">
+          <label>Стать (для ФІЗ-Д1)</label>
+          <select name="gender" value={form.gender || ''} onChange={set}>
+            <option value="">— не вказано —</option>
+            <option value="Ж">жіноча</option>
+            <option value="Ч">чоловіча</option>
+          </select>
+        </div>
+        <div className="field">
+          <label>Лікарняні за страховим стажем</label>
+          <select name="sickPercent" value={+form.sickPercent || 100} onChange={set}>
+            {SICK_STAZH_PERCENTS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label>Базовий місяць індексації</label>
+          <input type="month" name="indexBaseMonth" value={form.indexBaseMonth || ''} onChange={set} />
+        </div>
+        <div className="field">
+          <span className="cell-muted" style={{ fontSize: '.78rem' }}>
+            Базовий — місяць останнього підвищення окладу за посадою. Порожньо = січень 2026
+            (обнулення за Законом про Держбюджет-2026).
+          </span>
+        </div>
+      </div>
+      <div className="form-row-3">
+        <div className="field">
+          <label>Код професії за Класифікатором (ФІЗ-Д5)</label>
+          <input name="kpCode" value={form.kpCode || ''} onChange={set} placeholder="8322" />
+        </div>
+        <div className="field">
+          <label>Професійна назва роботи за Класифікатором</label>
+          <input name="kpName" value={form.kpName || ''} onChange={set} placeholder="Водій автотранспортних засобів" />
+        </div>
+      </div>
       <div className="form-row-3">
         <div className="field">
           <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -124,7 +164,9 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
 const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => {
   // Середньоденна зарплата: фактичні нарахування за 12 місяців перед періодом
   // (Порядок № 100). Якщо історії нарахувань ще немає — від окладу.
-  const { payrollRecords: allPayroll } = useData();
+  const { payrollRecords: allPayroll, leaveRecords } = useData();
+  // Табель місяця: відпустки, лікарняні, дати прийняття/звільнення
+  const ts = buildEmployeeTimesheet(employee, period, leaveRecords || []);
   const history = (allPayroll || [])
     .filter(r => r.employeeId === employee.id && r.status !== 'draft' && r.period < period)
     .sort((a, b) => b.period.localeCompare(a.period))
@@ -142,15 +184,27 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   );
   const [netInput, setNetInput] = useState('');
   const [deductions, setDeductions] = useState(existingRecord?.deductions || []);
-  const [sickDays, setSickDays] = useState(String(existingRecord?.sickDays || 0));
-  const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || 100));
-  const [leaveDays, setLeaveDays] = useState(String(existingRecord?.leaveDays || 0));
+  const [sickDays, setSickDays] = useState(String(existingRecord ? (existingRecord.sickDays || 0) : ts.sick));
+  const [sickPercent, setSickPercent] = useState(String(existingRecord?.sickPayPercent || employee.sickPercent || 100));
+  const [sickDaysBefore, setSickDaysBefore] = useState(String(existingRecord?.sickDaysBefore || 0));
+  const [sickLowStazh, setSickLowStazh] = useState(!!existingRecord?.sickLowStazh);
+  const [sickPfu, setSickPfu] = useState(existingRecord ? existingRecord.sickPfuIncluded !== false : true);
+  const [leaveDays, setLeaveDays] = useState(String(existingRecord ? (existingRecord.leaveDays || 0) : ts.annual));
+  // Робочі дні, за які нараховується оклад (без відпустки, лікарняних і днів поза трудовими
+  // відносинами). Дні відпустки без збереження віднімаються окремо нижче.
+  // У раніше збережених нарахуваннях цього поля не було — там оклад брався повністю.
+  const [baseDays, setBaseDays] = useState(String(
+    existingRecord ? (existingRecord.baseDays ?? calcWorkingDaysInMonth(period)) : (ts.workDays + ts.unpaidWork)
+  ));
+  const [indexOverride, setIndexOverride] = useState(
+    existingRecord && existingRecord.indexationManual ? String(existingRecord.indexationAmount || 0) : ''
+  );
   const [compensationDays, setCompensationDays] = useState(String(existingRecord?.compensationDays || 0));
   // Оголошення станів ВВР мають іти ДО unpaidCalendarDays: const не піднімається,
   // читання unpaidStartDate вище за його useState кидало ReferenceError (TDZ)
   // і рушило весь калькулятор нарахування.
-  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || `${period}-01`);
-  const [unpaidEndDate, setUnpaidEndDate] = useState(existingRecord?.unpaidEndDate || '');
+  const [unpaidStartDate, setUnpaidStartDate] = useState(existingRecord?.unpaidStartDate || ts.unpaidFrom || `${period}-01`);
+  const [unpaidEndDate, setUnpaidEndDate] = useState(existingRecord ? (existingRecord.unpaidEndDate || '') : ts.unpaidTo);
   // к.д. = включно з...до; порожні дати → 0
   const unpaidCalendarDays = (unpaidStartDate && unpaidEndDate && unpaidEndDate >= unpaidStartDate)
     ? Math.round((new Date(unpaidEndDate) - new Date(unpaidStartDate)) / 86400000) + 1
@@ -160,11 +214,20 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const [otherAccruals, setOtherAccruals] = useState(String(existingRecord?.otherAccruals || 0));
   const [notes, setNotes] = useState(existingRecord?.notes || '');
 
-  // Чи відпрацьований повний місяць (для визначення бази ЄСВ)
-  const isFullMonth = +unpaidDays === 0 && +sickDays === 0 && +leaveDays === 0 && +compensationDays === 0;
+  // У трудових відносинах увесь місяць → при базі, меншій за МЗП, ЄСВ від МЗП
+  // (також коли були лікарняні, відпустка чи відпустка без збереження).
+  const isFullMonth = ts.fullMonthEmployed;
+
+  // Середньоденна для лікарняних рахується окремо від відпускної (Порядок № 1266)
+  const sickDailyInfo = calcSickDaily({
+    history: history.map(r => ({ period: r.period, gross: +r.totalGross || 0 })),
+    salary: +employee.salary || 0, period, lowStazh: sickLowStazh,
+  });
+  const sickDaily = sickDailyInfo.daily;
 
   // Похідні значення — рахуємо при кожному рендері від актуальних станів
-  const sickInfo   = calcSickPay({ dailyRate, totalDays: +sickDays, payPercent: +sickPercent });
+  const sickCalc   = calcSickPay({ dailyRate: sickDaily, totalDays: +sickDays, payPercent: +sickPercent, daysBefore: +sickDaysBefore });
+  const sickInfo   = { ...sickCalc, pfuAmount: sickPfu ? sickCalc.pfuAmount : 0 };
   const leaveAmt   = calcLeaveAmount(dailyRate, +leaveDays);
   const compAmt    = calcTerminationCompensation({ dailyRate, unusedDays: +compensationDays }).amount;
   const unpaidInfo = calcUnpaidLeaveDeduction({
@@ -173,8 +236,19 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
     unpaidDays:         +unpaidDays,
   });
 
-  const salaryAfterUnpaid = round2((+grossInput || 0) - unpaidInfo.deduction);
-  const totalGross = round2(salaryAfterUnpaid + sickInfo.employerAmount + leaveAmt + compAmt + (+otherAccruals || 0));
+  // Оклад за відпрацьований час: пропорційно робочим дням, мінус відпустка без збереження
+  const normDays = +workingDaysInMonth || 21;
+  const paidDays = Math.max(0, Math.min(+baseDays || 0, normDays));
+  const salaryForDays = round2((+grossInput || 0) * paidDays / normDays);
+  const salaryAfterUnpaid = Math.max(0, round2(salaryForDays - unpaidInfo.deduction));
+  // Індексація: у межах прожиткового мінімуму, пропорційно відпрацьованому часу
+  const indexInfo = calcIndexation({
+    baseMonth: employee.indexBaseMonth, period, income: salaryAfterUnpaid,
+    workShare: Math.max(0, paidDays - (+unpaidDays || 0)) / normDays,
+  });
+  const indexAmt = indexOverride !== '' ? round2(+indexOverride || 0) : indexInfo.amount;
+  const totalGross = round2(salaryAfterUnpaid + indexAmt + sickInfo.employerAmount + sickInfo.pfuAmount
+    + leaveAmt + compAmt + (+otherAccruals || 0));
 
   const calc = useMemo(() => {
     const esvOpts = { hasDisability: !!employee.hasDisability, period };
@@ -200,15 +274,21 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
       const cd     = +compensationDays || 0;
       const other  = +otherAccruals || 0;
       const sp     = +sickPercent || 100;
-      const fullMonth = ud === 0 && sd === 0 && ld === 0 && cd === 0;
+      const fullMonth = ts.fullMonthEmployed;
 
-      const sick2   = calcSickPay({ dailyRate, totalDays: sd, payPercent: sp });
+      const sickC2  = calcSickPay({ dailyRate: sickDaily, totalDays: sd, payPercent: sp, daysBefore: +sickDaysBefore });
+      const sick2   = { ...sickC2, pfuAmount: sickPfu ? sickC2.pfuAmount : 0 };
       const leave2  = calcLeaveAmount(dailyRate, ld);
       const comp2   = calcTerminationCompensation({ dailyRate, unusedDays: cd }).amount;
       const unpaid2 = calcUnpaidLeaveDeduction({ monthlySalary: gInput, workingDaysInMonth: wdim, unpaidDays: ud });
 
-      const salaryNet2 = round2(gInput - unpaid2.deduction);
-      const totalGross2 = round2(salaryNet2 + sick2.employerAmount + leave2 + comp2 + other);
+      const paid2 = Math.max(0, Math.min(+baseDays || 0, wdim));
+      const salaryNet2 = Math.max(0, round2(round2(gInput * paid2 / wdim) - unpaid2.deduction));
+      const index2 = indexOverride !== '' ? round2(+indexOverride || 0) : calcIndexation({
+        baseMonth: employee.indexBaseMonth, period, income: salaryNet2,
+        workShare: Math.max(0, paid2 - ud) / wdim,
+      }).amount;
+      const totalGross2 = round2(salaryNet2 + index2 + sick2.employerAmount + sick2.pfuAmount + leave2 + comp2 + other);
 
       const esvOpts2 = { hasDisability: !!employee.hasDisability, period };
       const finalCalc = mode === 'gross'
@@ -224,6 +304,15 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         sickDays:             sd,
         sickPayPercent:       sp,
         sickPayAmount:        sick2.employerAmount,
+        sickPfuAmount:        sick2.pfuAmount,
+        sickPfuIncluded:      sickPfu,
+        sickDaysBefore:       +sickDaysBefore || 0,
+        sickLowStazh:         sickLowStazh,
+        sickDailyRate:        sd > 0 ? sickDaily : 0,
+        baseDays:             paid2,
+        indexationAmount:     index2,
+        indexationManual:     indexOverride !== '',
+        indexationCoef:       indexInfo.coefPercent,
         leaveDays:            ld,
         leavePayAmount:       leave2,
         compensationDays:     cd,
@@ -283,12 +372,37 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
           <label>Лікарняних днів</label>
           <input type="number" value={sickDays} onChange={e => setSickDays(e.target.value)} min="0" />
         </div>
-        {+sickDays > 0 && (
+        {+sickDays > 0 && (<>
           <div className="field">
-            <label>% оплати лікарняного</label>
-            <input type="number" value={sickPercent} onChange={e => setSickPercent(e.target.value)} min="0" max="100" />
+            <label>Оплата за страховим стажем</label>
+            <select value={+sickPercent} onChange={e => setSickPercent(e.target.value)}>
+              {SICK_STAZH_PERCENTS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
           </div>
-        )}
+          <div className="field">
+            <label>З них оплачено в попередньому місяці, днів</label>
+            <input type="number" value={sickDaysBefore} onChange={e => setSickDaysBefore(e.target.value)} min="0" />
+          </div>
+          <div className="field">
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={sickLowStazh} onChange={e => setSickLowStazh(e.target.checked)} />
+              Стаж за останні 12 міс. менше 6 міс. (обмеження з МЗП)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={sickPfu} onChange={e => setSickPfu(e.target.checked)} />
+              Нарахувати частину коштом ПФУ (з 6-го дня)
+            </label>
+          </div>
+        </>)}
+        <div className="field">
+          <label>Робочих днів до оплати окладом (з {normDays})</label>
+          <input type="number" value={baseDays} onChange={e => setBaseDays(e.target.value)} min="0" max={normDays} />
+        </div>
+        <div className="field">
+          <label>Індексація, грн {indexInfo.coefPercent > 0 ? `(${indexInfo.coefPercent} %)` : ''}</label>
+          <input type="number" value={indexOverride} onChange={e => setIndexOverride(e.target.value)}
+            min="0" step="0.01" placeholder={String(indexInfo.amount)} />
+        </div>
         <div className="field">
           <label>Днів відпустки (щорічна)</label>
           <input type="number" value={leaveDays} onChange={e => setLeaveDays(e.target.value)} min="0" />
@@ -357,6 +471,9 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
           <div className="payroll-result-section">
             <div className="payroll-result-label">НАРАХОВАНО</div>
             <div className="payroll-result-row"><span>Оклад (повний)</span><b>{fmtMoney(grossInput)}</b></div>
+            {paidDays < normDays && (
+              <div className="payroll-result-row"><span>Оклад за {paidDays} з {normDays} роб. днів</span><b>{fmtMoney(salaryForDays)}</b></div>
+            )}
             {unpaidInfo.deduction > 0 && (
               <div className="payroll-result-row">
                 <span>ВВР ({+unpaidCalendarDays} к.д. → {+unpaidDays} роб.д. × {fmtMoney(unpaidInfo.dailyRate)} грн)</span>
@@ -366,7 +483,14 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
             {unpaidInfo.deduction > 0 && (
               <div className="payroll-result-row"><span>Оклад за відпрацьований час</span><b>{fmtMoney(salaryAfterUnpaid)}</b></div>
             )}
-            {sickInfo.employerAmount > 0 && <div className="payroll-result-row"><span>Лікарняний ({sickInfo.employerDays} д., роботодавець)</span><b>{fmtMoney(sickInfo.employerAmount)}</b></div>}
+            {indexAmt > 0 && (
+              <div className="payroll-result-row">
+                <span>Індексація ({indexOverride !== '' ? 'вручну' : `${indexInfo.coefPercent} % від ${fmtMoney(indexInfo.indexedPart)}, база ${indexInfo.base}`})</span>
+                <b>{fmtMoney(indexAmt)}</b>
+              </div>
+            )}
+            {sickInfo.employerAmount > 0 && <div className="payroll-result-row"><span>Лікарняний ({sickInfo.employerDays} д. × {fmtMoney(sickInfo.perDay)}, роботодавець)</span><b>{fmtMoney(sickInfo.employerAmount)}</b></div>}
+            {sickInfo.pfuAmount > 0 && <div className="payroll-result-row"><span>Лікарняний ({sickInfo.fssDays} д., коштом ПФУ)</span><b>{fmtMoney(sickInfo.pfuAmount)}</b></div>}
             {leaveAmt > 0 && <div className="payroll-result-row"><span>Відпускні ({leaveDays} к.д.)</span><b>{fmtMoney(leaveAmt)}</b></div>}
             {compAmt > 0 && <div className="payroll-result-row"><span>Компенсація відпустки ({compensationDays} д.)</span><b>{fmtMoney(compAmt)}</b></div>}
             {(+otherAccruals) > 0 && <div className="payroll-result-row"><span>Інші нарахування</span><b>{fmtMoney(otherAccruals)}</b></div>}
@@ -389,12 +513,27 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
           </div>
           <div className="payroll-result-section">
             <div className="payroll-result-label">НАРАХУВАННЯ РОБОТОДАВЦЯ (окремо від ФОП)</div>
-            <div className="payroll-result-row"><span>ЄСВ {(ESV_RATE*100).toFixed(0)}% {!isFullMonth ? '(неповний місяць)' : calc.esvBase > totalGross ? `(від мін. зарп. ${fmtMoney(calc.esvBase)})` : ''}</span><b>{fmtMoney(calc.esv)}</b></div>
+            <div className="payroll-result-row"><span>ЄСВ {((calc.esvRate || ESV_RATE)*100).toFixed(2).replace(/\.?0+$/, '')}% {!isFullMonth ? '(прийнятий/звільнений посеред місяця)' : calc.esvBase > totalGross ? `(від мін. зарп. ${fmtMoney(calc.esvBase)})` : ''}</span><b>{fmtMoney(calc.esv)}</b></div>
             <div className="payroll-result-row payroll-result-row--total"><span>Всього витрат роботодавця</span><b>{fmtMoney(calc.totalEmployerCost)}</b></div>
           </div>
         </div>
       </div>
 
+      {indexInfo.missing.length > 0 && (
+        <p className="form-error" style={{ marginTop: 8 }}>
+          Індексацію пораховано без індексу споживчих цін за {indexInfo.missing.join(', ')}: Держстат його ще не
+          оприлюднив або його не внесено в програму. Перевірте суму.
+        </p>
+      )}
+      {+sickDays > 0 && (
+        <p className="cell-muted" style={{ fontSize: '.8rem', marginTop: 8 }}>
+          Середньоденна для лікарняних: {fmtMoney(sickDaily)} грн
+          {sickDailyInfo.limited === 'max' && ' (обмежено максимальною базою ЄСВ)'}
+          {sickDailyInfo.limited === 'min' && ' (не менше розрахованої з МЗП)'}
+          {sickDailyInfo.limited === 'lowStazh' && ' (обмежено розрахунком з МЗП через стаж)'}
+          {sickDailyInfo.months === 0 && ' — заробітку в розрахунковому періоді немає, взято оклад / 30,44'}.
+        </p>
+      )}
       <div className="field" style={{ maxWidth: 400, marginTop: 12 }}>
         <label>Примітка</label>
         <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Примітка до нарахування" />
@@ -431,8 +570,11 @@ const printPayslip = (record, employee, fop) => {
 <table>
   <tr><th colspan="2">НАРАХУВАННЯ</th></tr>
   <tr><td>Оклад</td><td align="right">${fmtMoney(record.grossSalary)} грн</td></tr>
+  ${record.baseDays != null && record.baseDays < record.workingDaysInMonth?`<tr><td>Оклад за ${record.baseDays} з ${record.workingDaysInMonth} роб. днів</td><td align="right">${fmtMoney(Math.round(record.grossSalary * record.baseDays / record.workingDaysInMonth * 100) / 100)} грн</td></tr>`:''}
   ${record.unpaidDeductionAmount>0?`<tr><td>Відпустка за вл. рах. (${record.unpaidCalendarDays||record.unpaidDays} к.д. / ${record.unpaidDays} р.д.)</td><td align="right" style="color:#c0392b">− ${fmtMoney(record.unpaidDeductionAmount)} грн</td></tr>`:''}
-  ${record.sickPayAmount>0?`<tr><td>Лікарняний (${record.sickDays} дн., ${record.sickPayPercent}%)</td><td align="right">${fmtMoney(record.sickPayAmount)} грн</td></tr>`:''}
+  ${record.indexationAmount>0?`<tr><td>Індексація${record.indexationCoef ? ` (${record.indexationCoef} %)` : ''}</td><td align="right">${fmtMoney(record.indexationAmount)} грн</td></tr>`:''}
+  ${record.sickPayAmount>0?`<tr><td>Лікарняний коштом роботодавця (${record.sickPayPercent}%)</td><td align="right">${fmtMoney(record.sickPayAmount)} грн</td></tr>`:''}
+  ${record.sickPfuAmount>0?`<tr><td>Лікарняний коштом ПФУ (усього ${record.sickDays} дн.)</td><td align="right">${fmtMoney(record.sickPfuAmount)} грн</td></tr>`:''}
   ${record.leavePayAmount>0?`<tr><td>Відпускні (${record.leaveDays} к.д.)</td><td align="right">${fmtMoney(record.leavePayAmount)} грн</td></tr>`:''}
   ${record.compensationAmount>0?`<tr><td>Компенсація відпустки (${record.compensationDays} д.)</td><td align="right">${fmtMoney(record.compensationAmount)} грн</td></tr>`:''}
   ${record.otherAccruals>0?`<tr><td>Інші нарахування</td><td align="right">${fmtMoney(record.otherAccruals)} грн</td></tr>`:''}
@@ -440,10 +582,10 @@ const printPayslip = (record, employee, fop) => {
   <tr><th colspan="2">УТРИМАННЯ</th></tr>
   <tr><td>ПДФО 18%</td><td align="right">${fmtMoney(record.pdfo)} грн</td></tr>
   <tr><td>ВЗ 5%</td><td align="right">${fmtMoney(record.vz)} грн</td></tr>
-  ${ded ? `<tr><td>Аліменти / виконавчі</td><td align="right">${fmtMoney(record.totalDeductions - record.pdfo - record.vz)} грн</td></tr>` : ''}
+  ${ded ? `<tr><td>Аліменти / виконавчі</td><td align="right">${fmtMoney(record.totalDeductions)} грн</td></tr>` : ''}
   <tr class="net"><td>ДО ВИПЛАТИ</td><td align="right">${fmtMoney(record.netPay)} грн</td></tr>
   <tr><th colspan="2">РОБОТОДАВЕЦЬ (додатково)</th></tr>
-  <tr><td>ЄСВ 22%</td><td align="right">${fmtMoney(record.esv)} грн</td></tr>
+  <tr><td>ЄСВ ${record.hasDisability ? '8,41' : '22'}%</td><td align="right">${fmtMoney(record.esv)} грн</td></tr>
 </table>
 ${employee?.iban?`<p style="margin-top:8px">IBAN: ${employee.iban}</p>`:''}
 <p style="margin-top:12px;font-size:10px;color:#666">Дата: ${new Date().toLocaleDateString('uk-UA')}</p>
@@ -467,7 +609,6 @@ const PayrollView = () => {
   const [calcEmp, setCalcEmp]   = useState(null);    // employee for payroll calc
   const [period, setPeriod]     = useState(() => new Date().toISOString().slice(0,7));
   const [addLeave, setAddLeave] = useState(null);    // employee for leave form
-  const [xmlDocVer, setXmlDocVer] = useState(() => activeFop?.xmlDocVer || '01');
 
   // Авто-розрахунок накопиченої відпустки за стажем від дати прийому (ст.9 ЗУ «Про відпустки»)
   const calcLeaveBalance = (emp) => {
@@ -517,15 +658,6 @@ const PayrollView = () => {
     approveAndPayPayroll(record.id, d, part, +a || defAmount);
   };
 
-  // ─── XML звітність ────────────────────────────────────────────
-  const handleExportXml = (appendix) => {
-    const records = monthRecords.filter(r => r.status === 'approved' || r.status === 'paid');
-    if (!records.length) { alert('Немає затверджених нарахувань за цей місяць'); return; }
-    const xml = generatePayrollXml({ records, employees, fop: activeFop, period, docVer: xmlDocVer });
-    if (!xml) { alert('Помилка генерації XML'); return; }
-    downloadXml(xml, `Єдина_звітність_${period}_${appendix}.xml`);
-  };
-
   // ─── Відпустки ────────────────────────────────────────────────
   const LeaveForm = ({ emp }) => {
     const [lf, setLf] = useState({ type: 'annual', employeeId: emp.id, startDate: '', endDate: '', days: '', notes: '' });
@@ -533,8 +665,12 @@ const PayrollView = () => {
     const { accrued: leaveAccrued, used: leaveUsedAmt, balance } = calcLeaveBalance(emp);
 
     const save = () => {
-      if (!lf.startDate || !lf.days) { alert('Вкажіть дату початку і кількість днів'); return; }
-      addLeaveRecord({ ...lf, days: +lf.days });
+      // Якщо днів не вказано, рахуємо їх за датами (включно)
+      const byDates = (lf.startDate && lf.endDate && lf.endDate >= lf.startDate)
+        ? Math.round((new Date(lf.endDate) - new Date(lf.startDate)) / 86400000) + 1 : 0;
+      const days = +lf.days || byDates;
+      if (!lf.startDate || !days) { alert('Вкажіть дату початку і кількість днів або дату кінця'); return; }
+      addLeaveRecord({ ...lf, days });
       setAddLeave(null);
     };
 
@@ -585,7 +721,8 @@ const PayrollView = () => {
       <div className="tabs-bar" style={{ marginBottom: 16 }}>
         <button className={`tab-pill${tab==='employees'?' tab-pill--active':''}`} onClick={() => setTab('employees')}>Працівники ({activeEmployees.length})</button>
         <button className={`tab-pill${tab==='payroll'?' tab-pill--active':''}`} onClick={() => setTab('payroll')}>Нарахування</button>
-        <button className={`tab-pill${tab==='leave'?' tab-pill--active':''}`} onClick={() => setTab('leave')}>Відпустки</button>
+        <button className={`tab-pill${tab==='leave'?' tab-pill--active':''}`} onClick={() => setTab('leave')}>Відпустки і лікарняні</button>
+        <button className={`tab-pill${tab==='timesheet'?' tab-pill--active':''}`} onClick={() => setTab('timesheet')}>Табель</button>
         <button className={`tab-pill${tab==='reports'?' tab-pill--active':''}`} onClick={() => setTab('reports')}>Звітність</button>
       </div>
 
@@ -657,6 +794,12 @@ const PayrollView = () => {
               <label>Місяць</label>
               <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{width:160}} />
             </div>
+            {monthRecords.length > 0 && (
+              <button className="btn btn--ghost"
+                onClick={() => openPrintWindow(buildPayrollSheetHtml({ records: monthRecords, employees, period, fop: activeFop }), { fop: activeFop })}>
+                🖨 Відомість
+              </button>
+            )}
             {activeEmployees.map(emp => {
               const has = monthRecords.find(r => r.employeeId === emp.id);
               return (
@@ -721,6 +864,10 @@ const PayrollView = () => {
                                 <button className="btn btn--primary btn--sm" onClick={() => handlePayPart(r, 'final')}>Виплатити</button>
                               )}
                               <button className="btn btn--ghost btn--sm" onClick={() => printPayslip(r, emp, activeFop)}>🖨</button>
+                              {+r.sickDays > 0 && (
+                                <button className="btn btn--ghost btn--sm" title="Розрахунок лікарняних"
+                                  onClick={() => openPrintWindow(buildSickCalcHtml({ record: r, employee: emp, fop: activeFop }), { fop: activeFop })}>ТН</button>
+                              )}
                               <button className="btn-icon btn-icon--del" onClick={() => window.confirm('Видалити нарахування?') && deletePayrollRecord(r.id)}>✕</button>
                             </div>
                           </td>
@@ -734,7 +881,7 @@ const PayrollView = () => {
                       <td style={{textAlign:'right', fontWeight:700}}>{fmtMoney(summary.totalGross)}</td>
                       <td style={{textAlign:'right'}}>{fmtMoney(summary.totalPdfo)}</td>
                       <td style={{textAlign:'right'}}>{fmtMoney(summary.totalVz)}</td>
-                      <td style={{textAlign:'right'}}>{fmtMoney(summary.totalDeductions - summary.totalPdfo - summary.totalVz)}</td>
+                      <td style={{textAlign:'right'}}>{fmtMoney(summary.totalDeductions)}</td>
                       <td style={{textAlign:'right', fontWeight:700, color:'var(--success)'}}>{fmtMoney(summary.totalNet)}</td>
                       <td style={{textAlign:'right'}}>{fmtMoney(summary.totalEsv)}</td>
                       <td colSpan={2}></td>
@@ -819,51 +966,11 @@ const PayrollView = () => {
         </div>
       )}
 
-      {/* ─── ЗВІТНІСТЬ ──────────────────────────────────────────── */}
-      {tab === 'reports' && (
-        <div>
-          <div className="filters-bar" style={{marginBottom:16}}>
-            <div className="field">
-              <label>Місяць звітності</label>
-              <input type="month" value={period} onChange={e => setPeriod(e.target.value)} style={{width:160}} />
-            </div>
-          </div>
+      {/* ─── ТАБЕЛЬ ─────────────────────────────────────────────── */}
+      {tab === 'timesheet' && <Timesheet period={period} setPeriod={setPeriod} />}
 
-          <div className="settings-section">
-            <h3>Єдина звітність з ПДФО, ВЗ та ЄСВ</h3>
-            <p className="cell-muted" style={{fontSize:'.83rem', marginBottom:12}}>
-              XML-файли для завантаження в Електронний кабінет платника (cabinet.tax.gov.ua).
-              Версія схеми (C_DOC_VER) налаштовується у профілі ФОП → вкладка «Додатково».
-              Для підпису потрібен КЕП — підписується в кабінеті після завантаження.
-            </p>
-            <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
-              <button className="btn btn--primary" onClick={() => handleExportXml('Д1_4ДФ')}>
-                ⇩ XML (Додатки 1 і 4ДФ) за {period}
-              </button>
-            </div>
-            {monthRecords.length > 0 && (
-              <div style={{marginTop:12}}>
-                <div className="invoice-detail-title">До включення в звіт ({period}):</div>
-                {monthRecords.map(r => {
-                  const emp = employees.find(e => e.id === r.employeeId);
-                  return (
-                    <div key={r.id} style={{display:'flex', gap:8, alignItems:'center', marginTop:4}}>
-                      <span className={`badge badge--${r.status==='paid'?'success':r.status==='advance_paid'?'warning':r.status==='approved'?'warning':'muted'}`}>
-                        {PAYROLL_STATUSES.find(s=>s.id===r.status)?.label}
-                      </span>
-                      <span>{emp?.fullName}</span>
-                      <span className="cell-muted">{fmtMoney(r.totalGross)} грн</span>
-                    </div>
-                  );
-                })}
-                {monthRecords.some(r => r.status === 'draft') && (
-                  <p className="form-error" style={{marginTop:8}}>Деякі нарахування ще в статусі "Чернетка" і не будуть включені в XML. Затвердіть їх.</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* ─── ЗВІТНІСТЬ ──────────────────────────────────────────── */}
+      {tab === 'reports' && <PayrollReports />}
     </div>
   );
 };

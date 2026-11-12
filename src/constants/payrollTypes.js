@@ -67,6 +67,11 @@ export const EMPTY_EMPLOYEE = {
   leaveUsed:        0,     // використано (к.д.)
   hasDisability:    false, // інвалідність підтверджена → ЄСВ 8,41%
   disabilityDocDate: '',   // дата отримання витягу/довідки
+  gender:           '',    // 'Ж' | 'Ч' — графа 6 додатка ФІЗ-Д1
+  indexBaseMonth:   '',    // базовий місяць індексації 'РРРР-ММ' (місяць останнього підвищення окладу)
+  sickPercent:      100,   // відсоток лікарняних за страховим стажем: 50 / 60 / 70 / 100
+  kpCode:           '',    // код професії за Класифікатором ДК 003:2010 (ФІЗ-Д5)
+  kpName:           '',    // професійна назва роботи за Класифікатором
   notes:            '',
   createdAt:        null,
 };
@@ -79,7 +84,10 @@ export const EMPTY_PAYROLL = {
   grossSalary:      0,     // оклад за відпрацьований час
   sickDays:         0,
   sickPayPercent:   100,
-  sickPayAmount:    0,
+  sickPayAmount:    0,     // перші 5 днів — коштом роботодавця
+  sickPfuAmount:    0,     // з 6-го дня — коштом ПФУ
+  sickDailyRate:    0,
+  indexationAmount: 0,
   leaveDays:        0,
   leavePayAmount:   0,
   compensationDays: 0,     // дні компенсації при звільненні

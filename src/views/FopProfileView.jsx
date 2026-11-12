@@ -333,6 +333,35 @@ const FopProfileView = ({ mode = 'create', fopId, onCancel, isFirst = false }) =
           {section === 'extra' && (
             <div className="settings-section">
 
+              {/* Реквізити для звітності ДПС */}
+              <h3 style={{marginBottom:4}}>Реквізити для звітності ДПС</h3>
+              <p className="cell-muted" style={{fontSize:'.83rem', marginBottom:12}}>
+                Потрібні для XML-файлів, які завантажуються в Електронний кабінет. Коди області й району
+                видно в назві будь-якого XML-файлу звіту, раніше сформованого в кабінеті чи іншій програмі:
+                перші дві цифри — область, наступні дві — район. Код податкового органу — чотири цифри
+                (зазвичай ті самі область + район).
+              </p>
+              <div className="form-row-4">
+                <div className="field"><label>Код області</label>
+                  <input name="dpsRegion" value={form.dpsRegion || ''} onChange={set} maxLength={2} placeholder="10" /></div>
+                <div className="field"><label>Код району</label>
+                  <input name="dpsDistrict" value={form.dpsDistrict || ''} onChange={set} maxLength={2} placeholder="13" /></div>
+                <div className="field"><label>Код податкового органу</label>
+                  <input name="dpsCode" value={form.dpsCode || ''} onChange={set} maxLength={4} placeholder="1013" /></div>
+                <div className="field"><label>Поштовий індекс</label>
+                  <input name="zipCode" value={form.zipCode || ''} onChange={set} maxLength={5} /></div>
+              </div>
+              <div className="form-row-4" style={{marginBottom:20}}>
+                <div className="field"><label>Назва податкового органу</label>
+                  <input name="dpsName" value={form.dpsName || ''} onChange={set} placeholder="ГУ ДПС у ... області" /></div>
+                <div className="field"><label>Код КАТОТТГ</label>
+                  <input name="katottg" value={form.katottg || ''} onChange={set} maxLength={19} placeholder="UA..." /></div>
+                <div className="field"><label>Телефон</label>
+                  <input name="phone" value={form.phone || ''} onChange={set} /></div>
+                <div className="field"><label>E-mail</label>
+                  <input name="email" type="email" value={form.email || ''} onChange={set} /></div>
+              </div>
+
               {/* Факсиміле */}
               <h3 style={{marginBottom:4}}>Факсиміле</h3>
               <p className="cell-muted" style={{fontSize:'.83rem', marginBottom:12}}>
