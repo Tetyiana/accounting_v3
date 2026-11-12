@@ -56,17 +56,36 @@ export const cbCloseShift = (licenseKey) =>
 export const cbXReport = (licenseKey) =>
   call('/reports', { method: 'POST', licenseKey, body: {} });
 
-// Чек продажу. items: [{name, price(грн), qty}], payment: 'CASH'|'CARD'
-export const cbSellReceipt = (licenseKey, items, payment, total) =>
+// Чек продажу або повернення. items: [{name, price(грн), qty, taxCodes?}], payment: 'CASH'|'CARD'.
+// isReturn — чек повернення (кожна позиція з is_return: true).
+// taxCodes — коди податкових ставок каси (ПДВ, акциз); налаштовуються в кабінеті Checkbox.
+export const cbSellReceipt = (licenseKey, items, payment, total, { isReturn = false } = {}) =>
   call('/receipts/sell', {
     method: 'POST', licenseKey,
     body: {
       goods: items.map(it => ({
-        good: { name: it.name, price: Math.round(it.price * 100), code: it.code || it.name.slice(0, 20) },
+        good: {
+          name: it.name, price: Math.round(it.price * 100), code: it.code || it.name.slice(0, 20),
+          ...(it.taxCodes?.length ? { tax: it.taxCodes } : {}),
+        },
         quantity: Math.round((+it.qty || 1) * 1000),
+        ...(isReturn ? { is_return: true } : {}),
       })),
       payments: [{ type: payment === 'CASH' ? 'CASH' : 'CASHLESS', value: Math.round(total * 100) }],
     },
   });
+
+// Службове внесення (сума > 0) або вилучення (сума < 0) готівки, грн
+export const cbServiceReceipt = (licenseKey, amount) =>
+  call('/receipts/service', {
+    method: 'POST', licenseKey,
+    body: { payment: { type: 'CASH', value: Math.round(amount * 100) } },
+  });
+
+// Податкові ставки, налаштовані на касі: [{ code, label, symbol, rate, extra_rate }]
+export const cbTaxes = async (licenseKey) => {
+  try { const r = await call('/tax', { licenseKey }); return Array.isArray(r) ? r : (r.results || []); }
+  catch { return []; }
+};
 
 export const receiptUrl = (id) => `https://check.checkbox.ua/${id}`;

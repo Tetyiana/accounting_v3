@@ -32,6 +32,7 @@ export const EMPTY_FOP = {
   zipCode:           '',   // поштовий індекс
   phone:             '',
   email:             '',
+  licenses:          null, // { list: [ліцензії], exciseManual: { 'РРРР-ММ': сума } }
   // ─── Оподаткування ─────────────────────────────────────────
   taxGroup:          '3_5',
   isVatPayer:        false,

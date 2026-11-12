@@ -23,10 +23,11 @@ const round2 = (n) => Math.round((+n || 0) * 100) / 100;
 const BUDGET_RE = /дпс|казначей|податков/i;
 const ESV_RE    = /єсв|єдин\S* внес|пфу|пенсійн/i;
 export const isOwnTaxPayment = (t) => {
-  // Рахунок обрано вручну: 64 — податки, решта — ні
-  if (t.ledgerAccount) return t.ledgerAccount === '64';
+  // Рахунок обрано вручну: 64 і субрахунки 641х (податки), 643 — не витрати;
+  // 642 (ліцензії та інші обов'язкові платежі) — витрати (пп. 177.4.3 ПКУ)
+  if (t.ledgerAccount) return t.ledgerAccount === '64' || /^64(1|3)/.test(t.ledgerAccount);
   const text = `${t.counterparty || ''} ${t.description || ''}`;
-  return BUDGET_RE.test(text) && !ESV_RE.test(text);
+  return BUDGET_RE.test(text) && !ESV_RE.test(text) && !/ліценз/i.test(text);
 };
 
 /**

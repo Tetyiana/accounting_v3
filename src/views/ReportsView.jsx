@@ -87,7 +87,7 @@ const ReportsView = () => {
     // обраним вручну в Банк/Каса або визначеним автоматично.
     const partyIdx = buildPartyIndex({ acts, invoices, payments });
     const paidToBudget = inRange
-      .filter(t => t.type === 'expense' && ['64', '65'].includes(corrAccountOf(t, partyIdx)))
+      .filter(t => t.type === 'expense' && /^(64|65)/.test(corrAccountOf(t, partyIdx)))
       .reduce((s,t) => s + (+t.amount||0), 0);
 
     // Зарплатні податки (ПДФО+ВЗ+ЄСВ) з нарахувань періоду — нараховані

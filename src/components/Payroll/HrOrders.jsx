@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { onSalaryRaise } from '../../utils/indexation';
 import { useData } from '../../context/DataContext';
 import { useFop } from '../../context/FopContext';
 import { openPrintWindow } from '../../utils/printWindow';
@@ -127,12 +128,20 @@ const HrOrders = ({ employees }) => {
     }
     if (form.orderType === 'transfer') {
       const eff = form.effectiveDate || form.orderDate;
-      // Підвищення окладу: місяць підвищення стає базовим для індексації (п. 5 Порядку № 1078)
-      const raised = +form.salary > +emp.salary;
+      // Підвищення окладу: новий базовий місяць і, якщо підвищення менше за індексацію, —
+      // «фіксована» індексація (п. 5 Порядку № 1078)
+      const idx = onSalaryRaise({
+        baseMonth: emp.indexBaseMonth, fixed: emp.indexFixed, month: eff.slice(0, 7),
+        oldSalary: +emp.salary, newSalary: +form.salary,
+      });
       updateEmployee(emp.id, {
         position: form.position || emp.position, salary: +form.salary || +emp.salary,
-        ...(raised && { indexBaseMonth: eff.slice(0, 7) }),
+        ...(idx && { indexBaseMonth: idx.indexBaseMonth, indexFixed: idx.indexFixed }),
       });
+      if (idx && idx.indexFixed > 0) {
+        alert(`Оклад підвищено на ${idx.raise} грн, а індексація за цей місяць становила б ${idx.due} грн.\n` +
+          `Різницю ${idx.indexFixed} грн програма нараховуватиме щомісяця як фіксовану індексацію.`);
+      }
     }
     if (form.orderType === 'dismiss')  updateEmployee(emp.id, { isActive: false, fireDate: form.effectiveDate || form.orderDate });
     openPrintWindow(buildOrderHtml(order, emp, activeFop), { fop: activeFop });

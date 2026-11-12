@@ -16,6 +16,7 @@ import DpsView from '../../views/DpsView';
 import AccountingView from '../../views/AccountingView';
 import PricingView from '../../views/PricingView';
 import RroView from '../../views/RroView';
+import ExciseView from '../../views/ExciseView';
 import DocumentsView from '../../views/DocumentsView';
 import ReportsView   from '../../views/ReportsView';
 import VatView       from '../../views/VatView';
@@ -73,6 +74,7 @@ const TABS = [
   { id: 'reports',   label: 'Звіти',              icon: '▥', group: 'main' },
   { id: 'vat',       label: 'ПДВ',                icon: '%', group: 'main', setting: 'isVatPayer' },
   { id: 'rro',       label: 'РРО / Каса',         icon: '🖨', group: 'main', setting: 'useRRO' },
+  { id: 'excise',    label: 'Ліцензії / Акциз',   icon: '🏷', group: 'main', setting: 'useRRO' },
   { id: 'help',        label: 'Інструкція',          icon: 'ℹ', group: 'bottom' },
   { id: 'support',     label: 'Підтримка',           icon: '🛟', group: 'bottom' },
   { id: 'pricing',     label: 'Тарифи',              icon: '💳', group: 'bottom' },
@@ -101,6 +103,7 @@ const VIEWS = {
   reports:   ()     => <ReportsView />,
   vat:       ()     => <VatView />,
   rro:       ()     => <RroView />,
+  excise:    ()     => <ExciseView />,
   trash:     ()     => <TrashView />,
   settings:  ()     => <SettingsView />,
   kdv:       ()     => <KdvView />,

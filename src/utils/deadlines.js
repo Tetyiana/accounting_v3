@@ -34,7 +34,7 @@ const reportDue = (periodEnd, days) => shiftWeekend(addDays(periodEnd, days));
 const payDue = (reportDeadline) => shiftWeekend(addDays(reportDeadline, 10));
 
 export const buildDeadlines = ({
-  taxGroup, isVatPayer, esvExempt = false, payrollRecords = [], employees = [], today = new Date(),
+  taxGroup, isVatPayer, esvExempt = false, payrollRecords = [], employees = [], today = new Date(), licenses = [],
 }) => {
   const now = startOfDay(today);
   const y = now.getFullYear(), m = now.getMonth(); // m: 0..11
@@ -136,6 +136,17 @@ export const buildDeadlines = ({
         title: `Не завершена виплата з/п: ${emp?.fullName || ''} за ${r.period} (${r.status === 'advance_paid' ? 'виплачено лише аванс' : 'затверджено, не виплачено'})`,
       });
     });
+
+  // Ліцензії на роздрібну торгівлю (Закон № 3817-IX): черговий платіж — до початку кварталу.
+  // Роздрібний акциз з алкоголю: декларація до 20 числа, сплата — ще 10 календарних днів.
+  if (licenses.length) {
+    push(new Date(y, curQ * 3, 0), `Плата за ліцензії за ${Q_NAME[curQ % 4]} квартал (до початку кварталу)`, 'license');
+    if (licenses.some(l => l.kind === 'alcohol' || l.kind === 'cider')) {
+      const due = shiftWeekend(new Date(y, m, 20));
+      push(due, 'Декларація акцизного податку (роздрібний акциз) за попередній місяць', 'excise');
+      push(addDays(due, 10), 'Сплата роздрібного акцизу за попередній місяць', 'excise');
+    }
+  }
 
   return list.sort((a, b) => a.date.localeCompare(b.date));
 };

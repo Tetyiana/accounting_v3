@@ -45,6 +45,17 @@ export const indexationCoef = (baseMonth, period, cpi = CPI) => {
   return out;
 };
 
+// Підвищення окладу (п. 5 Порядку № 1078): місяць підвищення стає базовим.
+// Якщо підвищення менше за суму індексації, що належала б у цьому місяці,
+// різниця виплачується й далі як «фіксована» індексація — до наступного підвищення.
+// Повертає нові значення для картки працівника.
+export const onSalaryRaise = ({ baseMonth, fixed = 0, month, oldSalary, newSalary, cpi = CPI }) => {
+  const raise = r2((+newSalary || 0) - (+oldSalary || 0));
+  if (raise <= 0) return null;
+  const due = r2(calcIndexation({ baseMonth, period: month, income: oldSalary, cpi }).amount + (+fixed || 0));
+  return { indexBaseMonth: month, indexFixed: raise >= due ? 0 : r2(due - raise), due, raise };
+};
+
 // Сума індексації за місяць.
 // income — нарахована зарплата за місяць (без індексації); workShare — частка
 // відпрацьованого часу (0..1), для неповного місяця сума пропорційна.

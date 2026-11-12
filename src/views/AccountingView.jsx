@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { useFop } from '../context/FopContext';
-import { buildLedgerEntries, LEDGER_ACCOUNTS } from '../utils/accountingLogic';
+import { buildLedgerEntries, LEDGER_ACCOUNTS, accountMatches, TAX_SUBACCOUNTS, isTaxAccount } from '../utils/accountingLogic';
 import { buildSettlements } from '../utils/settlements';
 import { fmtMoney } from '../utils/documentLogic';
 import { openPrintWindow } from '../utils/printWindow';
@@ -15,7 +15,7 @@ const signLabel = (v) => (v > 0 ? ' (Дт)' : v < 0 ? ' (Кт)' : '');
 const monthAgo = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); };
 
 const AccountingView = () => {
-  const { transactions, acts, invoices, payments } = useData();
+  const { transactions, acts, invoices, payments, payrollRecords, vatInvoices, employees } = useData();
   const { activeFop } = useFop();
   const [tab, setTab] = useState('chess');
   const [dateStart, setDateStart] = useState(monthAgo());
@@ -23,21 +23,35 @@ const AccountingView = () => {
   const [selAcc, setSelAcc] = useState('31');
 
   const allEntries = useMemo(
-    () => buildLedgerEntries(transactions, { acts, invoices, payments }),
-    [transactions, acts, invoices, payments]);
+    () => buildLedgerEntries(transactions, { acts, invoices, payments, payrollRecords, vatInvoices, employees }),
+    [transactions, acts, invoices, payments, payrollRecords, vatInvoices, employees]);
   const entries = useMemo(() => allEntries
     .filter(e => (!dateStart || e.date >= dateStart) && (!dateEnd || e.date <= dateEnd)),
     [allEntries, dateStart, dateEnd]);
 
   // Сальдо обраного рахунка: на початок періоду, обороти, на кінець (Дт − Кт)
   const accBalance = useMemo(() => {
-    const side = (e) => (e.debit.code === selAcc ? e.amount : 0) - (e.credit.code === selAcc ? e.amount : 0);
+    const side = (e) => (accountMatches(e.debit.code, selAcc) ? e.amount : 0) - (accountMatches(e.credit.code, selAcc) ? e.amount : 0);
     const opening = round2(allEntries.filter(e => dateStart && e.date < dateStart).reduce((s, e) => s + side(e), 0));
     const closing = round2(allEntries.filter(e => !dateEnd || e.date <= dateEnd).reduce((s, e) => s + side(e), 0));
     return { opening, closing };
   }, [allEntries, selAcc, dateStart, dateEnd]);
 
   // Розрахунки по контрагентах на кінець періоду — для рахунків 36 і 63
+  // Рахунок 64: сальдо і обороти за кожним податком. Кредитове сальдо — борг перед бюджетом.
+  const taxRows = useMemo(() => {
+    if (!isTaxAccount(selAcc)) return [];
+    return TAX_SUBACCOUNTS.map(code => {
+      const side = (e) => (e.debit.code === code ? e.amount : 0) - (e.credit.code === code ? e.amount : 0);
+      const before = allEntries.filter(e => dateStart && e.date < dateStart);
+      const inside = entries;
+      const opening = round2(before.reduce((s, e) => s + side(e), 0));
+      const debit = round2(inside.filter(e => e.debit.code === code).reduce((s, e) => s + e.amount, 0));
+      const credit = round2(inside.filter(e => e.credit.code === code).reduce((s, e) => s + e.amount, 0));
+      return { code, opening, debit, credit, closing: round2(opening + debit - credit) };
+    }).filter(r => r.opening || r.debit || r.credit);
+  }, [allEntries, entries, selAcc, dateStart]);
+
   const partyRows = useMemo(() => {
     if (selAcc !== '36' && selAcc !== '63') return [];
     const side = selAcc === '36' ? 'customer' : 'supplier';
@@ -66,11 +80,11 @@ const AccountingView = () => {
 
   // Журнал-ордер по рахунку
   const accEntries = useMemo(() =>
-    entries.filter(e => e.debit.code === selAcc || e.credit.code === selAcc),
+    entries.filter(e => accountMatches(e.debit.code, selAcc) || accountMatches(e.credit.code, selAcc)),
     [entries, selAcc]);
   const accTotals = useMemo(() => ({
-    debit:  round2(accEntries.filter(e => e.debit.code === selAcc).reduce((s, e) => s + e.amount, 0)),
-    credit: round2(accEntries.filter(e => e.credit.code === selAcc).reduce((s, e) => s + e.amount, 0)),
+    debit:  round2(accEntries.filter(e => accountMatches(e.debit.code, selAcc)).reduce((s, e) => s + e.amount, 0)),
+    credit: round2(accEntries.filter(e => accountMatches(e.credit.code, selAcc)).reduce((s, e) => s + e.amount, 0)),
   }), [accEntries, selAcc]);
 
   const printChess = () => {
@@ -203,6 +217,29 @@ th{background:#f0f0f0}@media print{body{margin:10mm}}</style></head><body>
               </tr>
             </tbody>
           </table>
+
+          {taxRows.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: 16 }}>
+              <h3 style={{ margin: '0 0 8px' }}>Розрахунки з бюджетом за видами податків</h3>
+              <table className="data-table">
+                <thead><tr><th>Субрахунок</th><th style={{ textAlign: 'right' }}>Сальдо на початок</th>
+                  <th style={{ textAlign: 'right' }}>Сплачено (Дт)</th><th style={{ textAlign: 'right' }}>Нараховано (Кт)</th>
+                  <th style={{ textAlign: 'right' }}>Сальдо на кінець</th></tr></thead>
+                <tbody>{taxRows.map(r => (
+                  <tr key={r.code} style={{ cursor: 'pointer' }} onClick={() => setSelAcc(r.code)}>
+                    <td><b>{r.code}</b> {LEDGER_ACCOUNTS[r.code]}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtMoney(Math.abs(r.opening))}{signLabel(r.opening)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtMoney(r.debit)}</td>
+                    <td style={{ textAlign: 'right' }}>{fmtMoney(r.credit)}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmtMoney(Math.abs(r.closing))}{signLabel(r.closing)}</td>
+                  </tr>))}</tbody>
+              </table>
+              <p className="cell-muted" style={{ fontSize: '.8rem', marginTop: 6 }}>
+                Нарахування є для ПДВ (з актів і ПН на передоплату), ПДФО і військового збору із зарплати, роздрібного акцизу.
+                Єдиний податок, ПДФО і військовий збір за себе в проводках не нараховуються — видно лише сплату.
+              </p>
+            </div>
+          )}
 
           {partyRows.length > 0 && (
             <>

@@ -7,8 +7,11 @@ import { incomeLimitFor, checkIncomeLimit } from '../src/utils/incomeLimits.js';
 import { buildDeadlines } from '../src/utils/deadlines.js';
 import { calcGeneralYear, isOwnTaxPayment } from '../src/utils/generalSystem.js';
 import { calcNetFromGross, calcLeaveDaily, calcSickDaily, calcSickPay } from '../src/utils/payrollLogic.js';
-import { indexationCoef, calcIndexation } from '../src/utils/indexation.js';
+import { indexationCoef, calcIndexation, onSalaryRaise } from '../src/utils/indexation.js';
 import { buildEmployeeTimesheet, avgHeadcountMonth } from '../src/utils/timesheet.js';
+import { buildLedgerEntries as BLE, corrAccountOf as CAO, taxSubaccount, accountMatches } from '../src/utils/accountingLogic.js';
+import { isOwnTaxPayment as IOTP } from '../src/utils/generalSystem.js';
+import * as V from '../src/utils/vatLogic.js';
 import { buildUnifiedPackage, calcDisabilityReport } from '../src/utils/payrollXml.js';
 import { buildLedgerEntries, suggestCorrAccount, cashBalances } from '../src/utils/accountingLogic.js';
 import { buildSettlements, partyKey, effectivePayments } from '../src/utils/settlements.js';
@@ -142,7 +145,7 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(dc('act_A3_n'), '84-63-400');
   assert.equal(dc('T5'), '63-31-400');
   assert.equal(dc('T6'), '84-31-90');
-  assert.equal(dc('act_A4_n'), '36-70-1000'); assert.equal(dc('act_A4_v'), '36-64-200');
+  assert.equal(dc('act_A4_n'), '36-70-1000'); assert.equal(dc('act_A4_v'), '36-6414-200');
   const bal = (code) => Math.round(E.reduce((s, e) => s + (e.debit.code === code ? e.amount : 0) - (e.credit.code === code ? e.amount : 0), 0) * 100) / 100;
   assert.equal(bal('36'), 1000 + 500 + 1200 - 1000 - 200 - 700);   // 800
   assert.equal(bal('63'), 0);
@@ -161,9 +164,9 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
 // ── Кореспондуючий рахунок операцій банку ──
 {
   const acc = (t) => suggestCorrAccount({ type: 'expense', amount: 1, ...t }, {});
-  assert.equal(acc({ counterparty: 'ГУК у Київ.обл/Боярська тг/18050400', description: 'єдиний податок за 3 кв' }), '64');
+  assert.equal(acc({ counterparty: 'ГУК у Київ.обл/Боярська тг/18050400', description: 'єдиний податок за 3 кв' }), '6411');
   assert.equal(acc({ counterparty: 'ГУ ДПС у Київській області', description: 'ЄСВ за себе 3 кв 2026' }), '65');
-  assert.equal(acc({ counterparty: 'Казначейство України', description: 'військовий збір' }), '64');
+  assert.equal(acc({ counterparty: 'Казначейство України', description: 'військовий збір' }), '6413');
   assert.equal(acc({ counterparty: 'ТОВ Постач', description: 'оплата за товар, у т.ч. ПДВ 200,00' }), '84');
   assert.equal(acc({ counterparty: 'Петренко І.', description: 'Зарплата за жовтень' }), '66');
   assert.equal(acc({ counterparty: 'Банк', description: 'сплата ЄСВ' }), '65');
@@ -174,7 +177,7 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
     { id: 'X3', date: '2026-10-21', type: 'income', amount: 100, counterparty: 'Банк', ledgerAccount: '74' },
   ]);
   const dc = (id) => { const e = E.find(x => x.id === id); return `${e.debit.code}-${e.credit.code}`; };
-  assert.equal(dc('X1'), '64-31'); assert.equal(dc('X2'), '31-36'); assert.equal(dc('X3'), '31-74');
+  assert.equal(dc('X1'), '6419-31'); assert.equal(dc('X2'), '31-36'); assert.equal(dc('X3'), '31-74');
   assert.equal(isOwnTaxPayment({ counterparty: 'Невідомий', ledgerAccount: '64' }), true);
   assert.equal(isOwnTaxPayment({ counterparty: 'ГУ ДПС', ledgerAccount: '84' }), false);
 }
@@ -264,6 +267,20 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(calcIndexation({ baseMonth: '2026-03', period: '2026-11', income: 20000 }).amount, 159.74);
   assert.equal(calcIndexation({ baseMonth: '2026-01', period: '2026-11', income: 20000, workShare: 0.5 }).amount, 126.46);
   assert.ok(indexationCoef('2026-01', '2027-03').missing.length > 0);
+  // Грудень 2026 (після ІСЦ за жовтень 101,8): опубліковані суми для баз травень–серпень
+  assert.equal(calcIndexation({ baseMonth: '2026-02', period: '2026-11', income: 9000 }).amount, 216.32);
+  assert.equal(calcIndexation({ baseMonth: '2026-04', period: '2026-11', income: 9000 }).amount, 109.82);
+  assert.equal(calcIndexation({ baseMonth: '2026-05', period: '2026-12', income: 9000 }).amount, 139.78);
+  assert.equal(calcIndexation({ baseMonth: '2026-06', period: '2026-12', income: 9000 }).amount, 146.43);
+  assert.equal(calcIndexation({ baseMonth: '2026-07', period: '2026-12', income: 9000 }).amount, 133.12);
+  assert.equal(calcIndexation({ baseMonth: '2026-08', period: '2026-12', income: 9000 }).amount, 129.79);
+  assert.equal(calcIndexation({ baseMonth: '2026-08', period: '2026-11', income: 9000 }).amount, 0);
+  assert.equal(calcIndexation({ baseMonth: '2026-01', period: '2026-12', income: 9000 }).amount, 252.93);
+  // Підвищення окладу в листопаді (індексація 252,93): на 100 грн → фіксована 152,93; на 1000 грн → 0
+  const up1 = onSalaryRaise({ baseMonth: '2026-01', month: '2026-11', oldSalary: 9000, newSalary: 9100 });
+  assert.equal(up1.indexBaseMonth, '2026-11'); assert.equal(up1.indexFixed, 152.93);
+  assert.equal(onSalaryRaise({ baseMonth: '2026-01', month: '2026-11', oldSalary: 9000, newSalary: 10000 }).indexFixed, 0);
+  assert.equal(onSalaryRaise({ baseMonth: '2026-01', month: '2026-11', oldSalary: 9000, newSalary: 9000 }), null);
 
   // Лікарняні: 240 000 за 12 міс. (365 днів) = 657,53; стаж 4 роки — 60 % = 394,52
   const hist = ['2025-08','2025-09','2025-10','2025-11','2025-12','2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07']
@@ -322,5 +339,131 @@ assert.equal(checkIncomeLimit(10100000, '3_5', 2026).level, 'exceeded');
   assert.equal(dr.avgWage, 10000); assert.equal(dr.contribution, 6000); assert.ok(dr.isPayer);
   assert.equal(calcDisabilityReport({ employees: many.slice(0, 5), records: recs, year: 2026, quarter: 3 }).contribution, 0);
   assert.equal(calcDisabilityReport({ employees: many, records: recs, year: 2026, quarter: 3, overrides: { withDisability: 1 } }).contribution, 0);
+}
+// ── ПДВ: перша подія, строки реєстрації, період декларації, РК ──
+{
+  const item = (qty, price, vatRate = '20') => ({ name: 'Послуга', unit: 'послуга', qty, price, vatRate });
+  const inv = { id: 'i1', number: 'РАХ-1', direction: 'outgoing', clientName: 'ТОВ А', clientIpn: '12345678', items: [item(10, 1000)] }; // 12 000 з ПДВ
+  const pay = (date, amount) => ({ invoiceId: 'i1', date, amount });
+  const act = (id, date, qty) => ({ id, invoiceId: 'i1', date, items: [item(qty, 1000)] });
+
+  // 1) Передоплата 50 % → ПН на 6000; потім акт на все → ПН на решту 6000
+  let ev = V.firstEvents({ invoice: inv, payments: [pay('2026-10-05', 6000)], acts: [], vatInvoices: [] }).pending;
+  assert.equal(ev.length, 1); assert.equal(ev[0].kind, 'prepayment'); assert.equal(ev[0].amount, 6000);
+  const pn1 = { id: 'v1', ...V.draftPnForEvent(ev[0], [], { isVatPayer: true }) };
+  assert.equal(pn1.number, '1'); assert.equal(V.vatTotals(pn1).base, 5000); assert.equal(V.vatTotals(pn1).vat, 1000);
+  assert.equal(pn1.items[0].qty, 5);
+  ev = V.firstEvents({ invoice: inv, payments: [pay('2026-10-05', 6000)], acts: [act('a1', '2026-10-20', 10)], vatInvoices: [pn1] }).pending;
+  assert.equal(ev.length, 1); assert.equal(ev[0].kind, 'act'); assert.equal(ev[0].amount, 6000);
+  const pn2 = { id: 'v2', ...V.draftPnForEvent(ev[0], [pn1], { isVatPayer: true }) };
+  assert.equal(pn2.number, '2'); assert.equal(V.vatTotals(pn2).total, 6000); assert.equal(pn2.sourceActId, 'a1');
+  // 2) Після обох ПН подій не лишається; доплата після акта нової ПН не дає
+  assert.equal(V.firstEvents({ invoice: inv, payments: [pay('2026-10-05', 6000), pay('2026-11-02', 6000)], acts: [act('a1', '2026-10-20', 10)], vatInvoices: [pn1, pn2] }).pending.length, 0);
+  // 3) Акт раніше за оплату → одна ПН на акт; оплата в той самий день іде першою
+  ev = V.firstEvents({ invoice: inv, payments: [pay('2026-10-25', 12000)], acts: [act('a1', '2026-10-20', 10)], vatInvoices: [] }).pending;
+  assert.equal(ev.length, 1); assert.equal(ev[0].kind, 'act'); assert.equal(ev[0].amount, 12000);
+  ev = V.firstEvents({ invoice: inv, payments: [pay('2026-10-20', 12000)], acts: [act('a1', '2026-10-20', 10)], vatInvoices: [] }).pending;
+  assert.equal(ev[0].kind, 'prepayment');
+  // 4) Неплатник → тип причини 02, умовний ІПН; рахунок без ПДВ подій не дає
+  const np = V.draftPnForEvent(ev[0], [], { isVatPayer: false });
+  assert.equal(np.reasonType, '02'); assert.equal(np.buyerIpn, '100000000000'); assert.equal(np.counterparty, 'Неплатник');
+  assert.equal(V.pendingPnEvents({ invoices: [{ ...inv, items: [item(1, 100, 'no_vat')] }], payments: [pay('2026-10-01', 100)] }).length, 0);
+
+  // Строки реєстрації: 1–15 → 5 число, 16–кінець → 18 число, зведена 198.5 → 20 число
+  assert.equal(V.registrationDeadline({ date: '2026-10-15', kind: 'pn' }).date, '2026-11-05');
+  assert.equal(V.registrationDeadline({ date: '2026-10-16', kind: 'pn' }).date, '2026-11-18');
+  assert.equal(V.registrationDeadline({ date: '2026-12-31', kind: 'pn' }).date, '2027-01-18');
+  assert.equal(V.registrationDeadline({ date: '2026-10-31', kind: 'pn', spec: 'self198' }).date, '2026-11-20');
+  const rkDown = { date: '2026-10-10', kind: 'rk', direction: 'outgoing', amount: -1000, rate: 20 };
+  assert.equal(V.registrationDeadline(rkDown).by, 'buyer'); assert.equal(V.registrationDeadline(rkDown).date, '2026-10-27');
+  assert.equal(V.rkRegistrar(rkDown), 'buyer'); assert.equal(V.rkRegistrar({ ...rkDown, amount: 1000 }), 'seller');
+  assert.equal(V.rkRegistrar({ ...rkDown, spec: 'nonpayer' }), 'seller');
+
+  // Період декларації
+  const out = (o) => ({ direction: 'outgoing', kind: 'pn', rate: 20, ...o });
+  const inc = (o) => ({ direction: 'incoming', kind: 'pn', rate: 20, ...o });
+  const docs = [
+    out({ date: '2026-10-05', amount: 10000 }),                                             // зобов'язання 2000 незалежно від реєстрації
+    out({ date: '2026-10-07', amount: 1000, rate: 7 }),
+    out({ date: '2026-10-31', amount: 500, spec: 'self198' }),                              // рядок 4.1
+    out({ date: '2026-10-20', kind: 'rk', amount: -1000 }),                                 // зменшення без реєстрації — не враховано
+    out({ date: '2026-10-21', kind: 'rk', amount: 300 }),                                   // збільшення — за датою
+    inc({ date: '2026-10-10', amount: 4000, registered: true, registrationDate: '2026-10-30' }),
+    inc({ date: '2026-10-12', amount: 2000 }),                                              // не зареєстрована — кредиту немає
+    inc({ date: '2026-09-20', amount: 1000, registered: true, registrationDate: '2026-10-25' }), // запізнилась (строк 18.10) → жовтень
+    inc({ date: '2026-10-28', amount: 500, registered: true, registrationDate: '2026-11-10' }),  // вчасно (строк 18.11) → жовтень
+    inc({ date: '2026-10-15', kind: 'rk', amount: -200 }),                                  // зменшення кредиту — одразу
+  ];
+  const oct = V.calcVatMonth(docs, '2026-10');
+  assert.equal(oct.oblig[20].vat, 2000); assert.equal(oct.oblig[7].vat, 70); assert.equal(oct.self[20].vat, 100);
+  assert.equal(oct.obligAdjust.vat, 60); assert.equal(oct.obligVat, 2230);
+  assert.equal(oct.credit[20].vat, 1100); assert.equal(oct.creditAdjust.vat, -40); assert.equal(oct.creditVat, 1060);
+  assert.equal(oct.toPay, 1170); assert.equal(oct.pending.length, 2);
+  assert.equal(V.calcVatMonth(docs, '2026-09').credit[20].vat, 0);
+  // РК на зменшення, зареєстрована вчасно → період складання
+  const reg = docs.map(d => d.kind === 'rk' && d.amount === -1000 ? { ...d, registered: true, registrationDate: '2026-10-26' } : d);
+  assert.equal(V.calcVatMonth(reg, '2026-10').obligAdjust.vat, -140);
+  // Від'ємне значення переходить у кредит наступного місяця
+  const chain = [inc({ date: '2026-08-10', amount: 5000, registered: true, registrationDate: '2026-08-20' }), out({ date: '2026-09-10', amount: 2000 }), out({ date: '2026-10-10', amount: 1000 })];
+  assert.equal(V.calcVatChain(chain, '2026-08').negative, 1000);
+  assert.equal(V.calcVatChain(chain, '2026-09').negative, 600); assert.equal(V.calcVatChain(chain, '2026-09').carryIn, 1000);
+  assert.equal(V.calcVatChain(chain, '2026-10').negative, 400); assert.equal(V.calcVatChain(chain, '2026-11').carryIn, 400);
+
+  // РК: повернення 2 з 5 шт по 1000 → −2000 бази; зміна ціни −100 на 5 шт → −500
+  const pn = { id: 'p', number: '7', date: '2026-10-05', direction: 'outgoing', rate: 20, counterparty: 'ТОВ А', items: [{ name: 'Товар', qty: 5, price: 1000, base: 5000, rate: 20 }] };
+  const rk1 = V.draftRk(pn, V.buildRkItems(pn, [{ lineNo: 1, qtyDelta: -2 }], '103'), [pn], '2026-10-20');
+  assert.equal(rk1.amount, -2000); assert.equal(V.vatTotals(rk1).vat, -400); assert.equal(rk1.number, '8'); assert.equal(rk1.correctedNumber, '7');
+  assert.equal(V.buildRkItems(pn, [{ lineNo: 1, priceDelta: -100 }], '101')[0].base, -500);
+
+  // Роздріб: виручка 12 600, з них підакцизна 2 100 → акциз 100; ПДВ-база (12 600 − 100) / 1,2
+  assert.equal(V.retailExcise(2100), 100);
+  const tx = [{ type: 'income', paymentMethod: 'cash', amount: 12600, exciseBase: 2100, date: '2026-10-03', description: 'Фіскальний чек ПРРО №1' },
+              { type: 'income', paymentMethod: 'bank', amount: 999, date: '2026-10-03', description: 'оплата' }];
+  const days = V.pendingRetailDays({ transactions: tx, vatInvoices: [] });
+  assert.equal(days.length, 1); assert.equal(days[0].taxable, 12500); assert.equal(days[0].base, 10416.67);
+  const dpn = V.draftRetailPn(days[0], []);
+  assert.equal(dpn.reasonType, '11'); assert.equal(V.vatTotals(dpn).vat, 2083.33);
+  assert.equal(V.pendingRetailDays({ transactions: tx, vatInvoices: [dpn] }).length, 0);
+}
+// ── Рахунок 64: субрахунки за видами податків ──
+{
+  const tx = (o) => ({ type: 'expense', paymentMethod: 'bank', date: '2026-11-10', amount: 100, ...o });
+  const code = (o) => CAO(tx(o), null);
+  assert.equal(code({ counterparty: 'ГУК у Київській обл.', description: 'Єдиний податок за 3 кв. 2026' }), '6411');
+  assert.equal(code({ counterparty: 'ГУК у Київській обл.', description: 'ПДФО із заробітної плати за жовтень' }), '6412');
+  assert.equal(code({ counterparty: 'Казначейство', description: 'Військовий збір із зарплати' }), '6413');
+  assert.equal(code({ counterparty: 'ДПС', description: 'ПДВ за жовтень 2026' }), '6414');
+  assert.equal(code({ counterparty: 'ГУК', description: 'Акцизний податок з роздрібної торгівлі' }), '6415');
+  assert.equal(code({ counterparty: 'ГУК', description: 'Плата за ліцензію на роздрібну торгівлю алкоголем' }), '642');
+  assert.equal(code({ counterparty: 'ГУК у Київській обл.', description: 'Єдиний внесок за працівників' }), '65');
+  assert.equal(code({ counterparty: 'ТОВ Ромашка', description: 'ПДФО із зарплати' }), '6412');     // не 66
+  assert.equal(code({ counterparty: 'Іваненко', description: 'Зарплата за жовтень' }), '66');
+  assert.equal(code({ counterparty: 'ТОВ Постач', description: 'Оплата за товар, у т.ч. ПДВ 200,00' }), '84');
+  assert.equal(code({ counterparty: 'ГУК', description: 'податок', ledgerAccount: '64' }), '6419');   // старе «64» без субрахунка
+  assert.equal(code({ counterparty: 'ГУК', description: 'ПДВ', ledgerAccount: '64' }), '6414');
+  assert.equal(code({ counterparty: 'будь-хто', description: 'будь-що', ledgerAccount: '6413' }), '6413');
+  assert.equal(taxSubaccount('послуги без ПДВ'), '6419');
+  assert.ok(accountMatches('6414', '64')); assert.ok(accountMatches('643', '64')); assert.ok(!accountMatches('65', '64')); assert.ok(!accountMatches('6414', '6412'));
+  // загальна система: ліцензія — витрата, податки — ні
+  assert.ok(IOTP(tx({ ledgerAccount: '6412' }))); assert.ok(!IOTP(tx({ ledgerAccount: '642' })));
+  assert.ok(!IOTP(tx({ counterparty: 'Казначейство', description: 'Плата за ліцензію' })));
+
+  // Проводки: зарплата, ПДВ з авансу і його закриття актом, акциз
+  const le = BLE(
+    [tx({ id: 't1', counterparty: 'ГУК', description: 'ПДФО із зарплати за 10.2026', amount: 1800 }),
+     { id: 't2', type: 'income', paymentMethod: 'cash', amount: 2100, exciseBase: 2100, date: '2026-10-07', description: 'Фіскальний чек', counterparty: 'Роздрібний покупець' }],
+    { payrollRecords: [{ id: 'r1', employeeId: 'e1', period: '2026-10', status: 'paid', totalGross: 10000, pdfo: 1800, vz: 500, esv: 2200 }],
+      employees: [{ id: 'e1', fullName: 'Петренко' }],
+      invoices: [{ id: 'i1', number: '1', direction: 'outgoing', clientName: 'ТОВ А' }],
+      acts: [{ id: 'a1', invoiceId: 'i1', number: '1', date: '2026-10-20', total: 12000, vatAmount: 2000, type: 'act', clientName: 'ТОВ А' }],
+      vatInvoices: [{ id: 'v1', direction: 'outgoing', kind: 'pn', basis: 'prepayment', sourceInvoiceId: 'i1', date: '2026-10-05', number: '1', amount: 5000, rate: 20 }] });
+  const turn = (c) => ({ dt: le.filter(e => e.debit.code === c).reduce((s, e) => s + e.amount, 0), kt: le.filter(e => e.credit.code === c).reduce((s, e) => s + e.amount, 0) });
+  assert.deepEqual(turn('6412'), { dt: 1800, kt: 1800 });          // нараховано і сплачено ПДФО
+  assert.deepEqual(turn('6413'), { dt: 0, kt: 500 });
+  assert.deepEqual(turn('65'), { dt: 0, kt: 2200 });
+  assert.deepEqual(turn('66'), { dt: 2300, kt: 10000 });
+  assert.deepEqual(turn('643'), { dt: 1000, kt: 1000 });           // аванс закрито актом
+  assert.deepEqual(turn('6414'), { dt: 1000, kt: 3000 });          // разом зобов'язань 2000 — як у акті
+  assert.deepEqual(turn('6415'), { dt: 0, kt: 100 });              // 2100 × 5 / 105
 }
 console.log('ALL OK');

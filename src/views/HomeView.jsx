@@ -67,8 +67,8 @@ const HomeView = ({ setActiveTab }) => {
     taxGroup: settings.taxGroup,
     isVatPayer: settings.isVatPayer,
     esvExempt: !!activeFop?.esvExempt,
-    payrollRecords, employees,
-  }).slice(0, 8), [settings.taxGroup, settings.isVatPayer, activeFop?.esvExempt, payrollRecords, employees]);
+    payrollRecords, employees, licenses: activeFop?.licenses?.list || [],
+  }).slice(0, 8), [settings.taxGroup, settings.isVatPayer, activeFop?.esvExempt, activeFop?.licenses, payrollRecords, employees]);
   const today = new Date();
   const greeting = today.getHours() < 12 ? 'Доброго ранку' :
                    today.getHours() < 17 ? 'Добрий день' : 'Добрий вечір';

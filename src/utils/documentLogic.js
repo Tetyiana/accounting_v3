@@ -248,6 +248,7 @@ export const buildKdvEntries = ({ invoices = [], acts = [], payments = [], trans
         if (account === '66') key = 'expPayroll';
         else if (account === '65') key = t.payrollRecordId ? 'expPayroll' : 'expTaxes';
         else if (account === '63') key = 'expGoods';
+        else if (account === '642') key = 'expTaxes';   // ліцензії та інші обов'язкові платежі
         else if (account === '84') key = 'expOther';
         else return;                               // 36, 37, 68 — не витрати діяльності
         entries.push({ ...base, docRef: ref(t, 'Витрата'), expDoc: ref(t, ''), [key]: net, totalExpense: net, netIncome: -net });

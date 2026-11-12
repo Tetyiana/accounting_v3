@@ -7,10 +7,10 @@ import AttachmentsList from '../components/common/AttachmentsList';
 
 const EMPTY_CLIENT = {
   id: null, name: '', ipn: '', phone: '', email: '',
-   address: '', isVatPayer: false, notes: '',
+   address: '', isVatPayer: false, vatIpn: '', notes: '',
 };
 const EMPTY_PRODUCT = {
-  id: null, name: '', unit: 'шт', price: '', vatRate: 'no_vat', notes: '',
+  id: null, name: '', unit: 'шт', price: '', vatRate: 'no_vat', uktzed: '', isExcise: false, notes: '',
 };
 
 const ClientForm = ({ initial, onSave, onCancel }) => {
@@ -54,8 +54,15 @@ const ClientForm = ({ initial, onSave, onCancel }) => {
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginTop: 4 }}>
         <label className="check-label">
           <input type="checkbox" name="isVatPayer" checked={!!form.isVatPayer} onChange={setCheck} />
-          Платник ПДВ (ІПН = РНОКПП/ЄДРПОУ, свідоцтво з 2014 р. скасовано)
+          Платник ПДВ
         </label>
+        {form.isVatPayer && (
+          <div className="field" style={{ maxWidth: 320 }}>
+            <label>ІПН платника ПДВ (юрособа — 12 цифр, ФОП — РНОКПП)</label>
+            <input name="vatIpn" value={form.vatIpn || ''} maxLength={12}
+              onChange={e => setForm(p => ({ ...p, vatIpn: e.target.value.replace(/\D/g, '') }))} />
+          </div>
+        )}
       </div>
       {form.id && activeFop && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
@@ -113,6 +120,18 @@ const ProductForm = ({ initial, onSave, onCancel }) => {
         <div className="field">
           <label>Примітка</label>
           <input name="notes" value={form.notes} onChange={set} />
+        </div>
+      </div>
+      <div className="form-row-2">
+        <div className="field">
+          <label>Код УКТ ЗЕД (товар) або ДКПП (послуга) — для податкової накладної</label>
+          <input name="uktzed" value={form.uktzed || ''} onChange={set} />
+        </div>
+        <div className="field">
+          <label className="check-label" style={{ marginTop: 22 }}>
+            <input type="checkbox" checked={!!form.isExcise} onChange={e => setForm(p => ({ ...p, isExcise: e.target.checked }))} />
+            Підакцизний товар у роздробі (алкоголь) — акциз 5 %
+          </label>
         </div>
       </div>
       <div className="form-actions" style={{ marginTop: 12 }}>

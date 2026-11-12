@@ -1,3 +1,4 @@
+import { firstEvents, draftPnForEvent } from '../utils/vatLogic';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { effectivePayments } from '../utils/settlements';
@@ -280,20 +281,6 @@ const mkNum = (list, prefix, dateStr) => {
     return hit ? Math.max(m, +hit[1]) : m;
   }, 0);
   return `${prefix}-${String(max + 1).padStart(3, '0')}`;
-};
-
-// Податкові накладні — нумерація в межах календарного місяця, тільки ВИДАНІ.
-// Вхідні ПН нумерує постачальник — вони не зсувають власну нумерацію.
-// Номер ПН: лише цифри, не може починатися з «0» (п. 6 Порядку № 1307,
-// ЗІР 101.27), тому padStart не застосовуємо.
-const mkVatNum = (vatInvoices, dateStr) => {
-  const monthKey = (dateStr || new Date().toISOString()).slice(0, 7);
-  const max = vatInvoices.reduce((m, v) => {
-    if (v.direction !== 'outgoing' || (v.date||'').slice(0,7) !== monthKey) return m;
-    const n = parseInt(String(v.number || '').split('/')[0], 10);
-    return Number.isFinite(n) ? Math.max(m, n) : m;
-  }, 0);
-  return String(max + 1);
 };
 
 // Автовизначення типу документа за одиницями вимірювання позицій рахунку:
@@ -1115,17 +1102,27 @@ const SalesView = () => {
                           : '\nЯкщо ПН помилкова — видаліть її в модулі ПДВ і сформуйте заново.'));
                     return;
                   }
-                  const num = mkVatNum(vatInvoices, act.date);
-                  const vatInv = addVatInvoice({
-                    date: act.date,
-                    number: num,
-                    direction: inv.direction,
-                    counterparty: act.clientName,
-                    amount: (calcDocTotals(act.items).subtotal || 0),
-                    sourceActId: act.id,
-                    sourceInvoiceNumber: inv.number,
-                    registered: false,
-                  });
+                  if (inv.direction !== 'outgoing') {
+                    alert('Це закупівля: отриману податкову накладну постачальника внесіть у модулі ПДВ → Отримані.');
+                    return;
+                  }
+                  // Правило першої події: якщо акт уже покритий накладними на передоплату,
+                  // нова ПН не потрібна; якщо покритий частково — ПН лише на різницю.
+                  const { pending } = firstEvents({ invoice: inv, acts, payments: payEff, vatInvoices });
+                  const earlier = pending.find(e => e.kind === 'prepayment' && e.date <= act.date);
+                  if (earlier) {
+                    alert(`Спершу потрібна ПН на передоплату від ${earlier.date} на ${fmtMoney(earlier.amount)} грн (перша подія — оплата).\nВипишіть її в модулі ПДВ → Контроль, тоді поверніться до акта.`);
+                    return;
+                  }
+                  const ev = pending.find(e => e.kind === 'act' && e.act.id === act.id);
+                  if (!ev) {
+                    alert(`Акт № ${act.number} повністю покритий податковими накладними на передоплату — окрема ПН на нього не складається.`);
+                    return;
+                  }
+                  const client = clients.find(c => c.name === inv.clientName);
+                  const draft = draftPnForEvent(ev, vatInvoices, client);
+                  if (!draft.items.length) { alert('В акті немає позицій з ПДВ — податкова накладна не складається.'); return; }
+                  const vatInv = addVatInvoice(draft);
                   updateAct(act.id, { taxInvoiceId: vatInv.id, taxInvoiceNumber: vatInv.number });
                 }}
                 onRefund={(refundAmount, note) => {

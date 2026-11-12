@@ -81,6 +81,9 @@ const col = (name, rows, pick, fmt = (v) => esc(v)) => rows
   .filter(Boolean).join('\n');
 const lines = (...parts) => parts.filter(Boolean).join('\n');
 
+// Спільні засоби для інших XML-модулів (ПДВ)
+export { fileNameOf, wrapXml, el, money, col, lines, dmy };
+
 // Реквізити ФОП, без яких кабінет файл не прийме
 export const fopXmlGaps = (fop) => {
   const miss = [];
@@ -101,7 +104,7 @@ const footer = (fop, fill) => lines(
   `<HBOS>${esc(fop?.fullName || '')}</HBOS>`,
 );
 
-const baseHead = (fop, form, extra) => ({
+export const baseHead = (fop, form, extra) => ({
   tin: fop?.rnokpp || '', ...regRaj(fop), ...form, dFill: todayDps(), ...extra,
 });
 

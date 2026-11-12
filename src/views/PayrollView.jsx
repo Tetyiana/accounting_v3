@@ -114,10 +114,8 @@ const EmployeeForm = ({ initial, onSave, onCancel }) => {
           <input type="month" name="indexBaseMonth" value={form.indexBaseMonth || ''} onChange={set} />
         </div>
         <div className="field">
-          <span className="cell-muted" style={{ fontSize: '.78rem' }}>
-            Базовий — місяць останнього підвищення окладу за посадою. Порожньо = січень 2026
-            (обнулення за Законом про Держбюджет-2026).
-          </span>
+          <label title="Якщо оклад підвищили менше, ніж на суму індексації, різниця виплачується щомісяця до наступного підвищення">Фіксована індексація, грн</label>
+          <input type="number" name="indexFixed" value={form.indexFixed || ''} onChange={set} min="0" step="0.01" placeholder="0" />
         </div>
       </div>
       <div className="form-row-3">
@@ -242,11 +240,14 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
   const salaryForDays = round2((+grossInput || 0) * paidDays / normDays);
   const salaryAfterUnpaid = Math.max(0, round2(salaryForDays - unpaidInfo.deduction));
   // Індексація: у межах прожиткового мінімуму, пропорційно відпрацьованому часу
+  const workShare = Math.min(1, Math.max(0, paidDays - (+unpaidDays || 0)) / normDays);
   const indexInfo = calcIndexation({
-    baseMonth: employee.indexBaseMonth, period, income: salaryAfterUnpaid,
-    workShare: Math.max(0, paidDays - (+unpaidDays || 0)) / normDays,
+    baseMonth: employee.indexBaseMonth, period, income: salaryAfterUnpaid, workShare,
   });
-  const indexAmt = indexOverride !== '' ? round2(+indexOverride || 0) : indexInfo.amount;
+  // «Фіксована» індексація з картки працівника — теж пропорційно відпрацьованому часу
+  const indexFixedAmt = round2((+employee.indexFixed || 0) * workShare);
+  const indexAuto = round2(indexInfo.amount + indexFixedAmt);
+  const indexAmt = indexOverride !== '' ? round2(+indexOverride || 0) : indexAuto;
   const totalGross = round2(salaryAfterUnpaid + indexAmt + sickInfo.employerAmount + sickInfo.pfuAmount
     + leaveAmt + compAmt + (+otherAccruals || 0));
 
@@ -284,10 +285,10 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
 
       const paid2 = Math.max(0, Math.min(+baseDays || 0, wdim));
       const salaryNet2 = Math.max(0, round2(round2(gInput * paid2 / wdim) - unpaid2.deduction));
-      const index2 = indexOverride !== '' ? round2(+indexOverride || 0) : calcIndexation({
-        baseMonth: employee.indexBaseMonth, period, income: salaryNet2,
-        workShare: Math.max(0, paid2 - ud) / wdim,
-      }).amount;
+      const share2 = Math.min(1, Math.max(0, paid2 - ud) / wdim);
+      const index2 = indexOverride !== '' ? round2(+indexOverride || 0) : round2(calcIndexation({
+        baseMonth: employee.indexBaseMonth, period, income: salaryNet2, workShare: share2,
+      }).amount + (+employee.indexFixed || 0) * share2);
       const totalGross2 = round2(salaryNet2 + index2 + sick2.employerAmount + sick2.pfuAmount + leave2 + comp2 + other);
 
       const esvOpts2 = { hasDisability: !!employee.hasDisability, period };
@@ -401,7 +402,7 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
         <div className="field">
           <label>Індексація, грн {indexInfo.coefPercent > 0 ? `(${indexInfo.coefPercent} %)` : ''}</label>
           <input type="number" value={indexOverride} onChange={e => setIndexOverride(e.target.value)}
-            min="0" step="0.01" placeholder={String(indexInfo.amount)} />
+            min="0" step="0.01" placeholder={String(indexAuto)} />
         </div>
         <div className="field">
           <label>Днів відпустки (щорічна)</label>
@@ -485,7 +486,7 @@ const PayrollCalc = ({ employee, period, existingRecord, onSave, onCancel }) => 
             )}
             {indexAmt > 0 && (
               <div className="payroll-result-row">
-                <span>Індексація ({indexOverride !== '' ? 'вручну' : `${indexInfo.coefPercent} % від ${fmtMoney(indexInfo.indexedPart)}, база ${indexInfo.base}`})</span>
+                <span>Індексація ({indexOverride !== '' ? 'вручну' : `${indexInfo.coefPercent} % від ${fmtMoney(indexInfo.indexedPart)}, база ${indexInfo.base}${indexFixedAmt > 0 ? `, у т. ч. фіксована ${fmtMoney(indexFixedAmt)}` : ''}`})</span>
                 <b>{fmtMoney(indexAmt)}</b>
               </div>
             )}

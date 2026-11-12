@@ -72,7 +72,8 @@ export function buildTaxInvoiceHtml(pn = {}, fop = {}) {
   // Розділ Б
   const rows = items.map((it, i) => {
     const base = +it.base || (+it.qty || 1) * (+it.price || 0);
-    const vat  = rate ? Math.round(base * rate) / 100 : 0;
+    const r = it.rate == null || it.rate === '' ? rate : +it.rate;   // ставка позиції, якщо задана
+    const vat  = r ? Math.round(base * r) / 100 : 0;
     return { ...it, base, vat, n: i + 1 };
   });
 
